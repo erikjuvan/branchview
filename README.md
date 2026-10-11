@@ -39,6 +39,8 @@ Alternatively run `python main.py` and use Open. On Arch Linux, installing
   compare against the empty tree.
 - Select exactly two nodes, then right-click either node or its label and choose
   Diff selected commits to compare their trees. The dialog lets you reverse the direction.
+- D: with one selected node, show its diff against its parent; with two selected
+  nodes, compare those commits. With no selection or more than two nodes, do nothing.
 - Both diff dialogs show a changed-file list and side-by-side file contents with
   original line numbers, red removed lines, green added lines, aligned spacer rows,
   and synchronized scrolling. File contents load when selected. Binary files show

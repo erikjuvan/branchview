@@ -161,9 +161,12 @@ class Window(QMainWindow):
         self.rearrange_shortcut = QShortcut(QKeySequence(Qt.Key.Key_R), self)
         self.rearrange_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
         self.rearrange_shortcut.activated.connect(self.rearrange_visible)
+        self.diff_shortcut = QShortcut(QKeySequence(Qt.Key.Key_D), self)
+        self.diff_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+        self.diff_shortcut.activated.connect(self.diff_selected_nodes)
         self.details = QTextEdit()
         self.details.setReadOnly(True)
-        self.details.setPlainText('Open a Git repository.\n\nWheel: zoom\nDrag background: select multiple · middle-drag: pan\nDrag a node or its label: rearrange\nR: rearrange visible nodes\nDelete: hide selected nodes\nClick a commit: inspect\nDouble-click a chain label: expand\n\nVertical position represents ancestry, not time.')
+        self.details.setPlainText('Open a Git repository.\n\nWheel: zoom\nDrag background: select multiple · middle-drag: pan\nDrag a node or its label: rearrange\nR: rearrange visible nodes\nD: diff one or two selected commits\nDelete: hide selected nodes\nClick a commit: inspect\nDouble-click a chain label: expand\n\nVertical position represents ancestry, not time.')
         splitter = QSplitter()
         splitter.addWidget(self.view)
         splitter.addWidget(self.details)
@@ -228,6 +231,15 @@ class Window(QMainWindow):
             action = menu.addAction('Diff selected commits…')
             action.triggered.connect(lambda: QTimer.singleShot(0, lambda: self.show_commit_diff(source, target)))
         return menu
+    def diff_selected_nodes(self):
+        if not self.repo:
+            return
+        selected = {item.oid for item in self.scene.selectedItems() if isinstance(item, Node)}
+        if len(selected) == 1:
+            self.show_diff(next(iter(selected)))
+        elif len(selected) == 2:
+            source, target = [o for o in reversed(self.repo.commits) if o in selected]
+            self.show_commit_diff(source, target)
     def show_commit_diff(self, source, target):
         dialog = QDialog(self)
         dialog.setWindowTitle('Diff between selected commits')
