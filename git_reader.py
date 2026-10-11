@@ -97,7 +97,7 @@ def _git_bytes(repo: Repository, *args: str) -> bytes:
         raise RuntimeError(result.stderr.decode('utf-8', errors='replace').strip())
     return result.stdout
 
-def read_changed_files(repo: Repository, source: str | None, target: str) -> list[ChangedFile]:
+def read_changed_files(repo: Repository, source: str | None, target: str, git_runner=None) -> list[ChangedFile]:
     """Read NUL-delimited tree changes, retaining blob IDs and rename paths."""
     if target not in repo.commits or (source is not None and source not in repo.commits
                                       and source not in repo.commits[target].parents):
@@ -105,7 +105,7 @@ def read_changed_files(repo: Repository, source: str | None, target: str) -> lis
     flags = ['--raw', '-z', '--no-abbrev', '--no-ext-diff', '--no-textconv', '-M']
     args = (['diff', *flags, source, target, '--'] if source else
             ['diff-tree', '--root', '--no-commit-id', '-r', *flags, target, '--'])
-    fields = _git_bytes(repo, *args).split(b'\0')
+    fields = (git_runner or _git_bytes)(repo, *args).split(b'\0')
     changes = []
     i = 0
     while i < len(fields) and fields[i]:

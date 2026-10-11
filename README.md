@@ -56,6 +56,17 @@ to avoid loading history on the first open.
   Line-ending styles (CRLF/LF/CR) are normalized for line matching; conversions
   are reported above the diff. Missing final newlines remain highlighted changes.
 - Space or Fit: fit entire graph. Click a commit: metadata and full message.
+- The sidebar loads extended details in the background: author and committer
+  identities/dates, references pointing here, all locally known containing branches
+  and tags, direct children, parent subjects and merge roles, integration merges
+  on current branches' first-parent paths, and changed files/statistics against
+  the first parent (or empty tree for roots). Parent, child, and integration links
+  navigate to commits; file links open side-by-side diffs. In branch-only mode,
+  inspecting an ancestor does not load the graph's full history. Results are cached
+  until Refresh. Searches are limited to 50,000 descendants and report incomplete
+  or shallow history. Git does not store original branch names; current containing
+  branches do not establish the branch where a commit was created. Squash merges
+  and cherry-picks have different commit IDs and are not attributed as exact matches.
 - T or Top commits: jump to and fit the visible branch tips and their labels,
   excluding ancestor history from the fit. If all tips are hidden, fit the exposed
   topmost commits. In branch-only mode, fit all visible branch tips.

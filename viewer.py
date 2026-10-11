@@ -1,5 +1,8 @@
 from PySide6.QtCore import Qt, QTimer
 from subprocess import TimeoutExpired
+from dataclasses import replace
+from urllib.parse import urlsplit, parse_qs
+import re
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QShortcut, QKeySequence
 from PySide6.QtWidgets import (QMainWindow, QGraphicsView, QGraphicsScene,
     QGraphicsEllipseItem, QGraphicsItem, QFileDialog, QMessageBox, QToolBar,
@@ -7,6 +10,7 @@ from PySide6.QtWidgets import (QMainWindow, QGraphicsView, QGraphicsScene,
     QStyle, QStyleOptionGraphicsItem)
 from git_reader import read_repository
 from diff_viewer import DiffViewer
+from commit_sidebar import CommitSidebar
 from graph import build_graph, hide_nodes
 from layout import layout, branch_layout
 
@@ -213,13 +217,15 @@ class Window(QMainWindow):
         self.diff_shortcut = QShortcut(QKeySequence(Qt.Key.Key_D), self)
         self.diff_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
         self.diff_shortcut.activated.connect(self.diff_selected_nodes)
-        self.details = QTextEdit()
+        self.details = CommitSidebar()
         self.details.setReadOnly(True)
+        self.details.anchorClicked.connect(self.open_detail_link)
+        self.inspected_selection = set()
         self.details.setPlainText('Open a Git repository.\n\nWheel: zoom\nDrag background: select multiple · middle-drag: pan\nDrag a node or its label: rearrange\nT: jump to and fit top commits\nR: rearrange visible nodes\nD: diff one or two selected commits\nDelete: hide selected nodes\nClick a commit: inspect\nDouble-click a chain label: expand\n\nVertical position represents ancestry, not time.')
         splitter = QSplitter()
         splitter.addWidget(self.view)
         splitter.addWidget(self.details)
-        splitter.setSizes([900,300])
+        splitter.setSizes([800,400])
         self.setCentralWidget(splitter)
         toolbar = QToolBar()
         self.addToolBar(toolbar)
@@ -258,16 +264,18 @@ class Window(QMainWindow):
             self.hidden_nodes.clear()
         self.manual_positions = self.positions_by_mode[repo.branches_only]
         self.repo = repo
+        self.details.reset_repository(repo)
         self.expanded.clear()
         explanation = ('Branches only: ancestor history is not loaded.\n'
                        'Nodes are branch tips arranged in a grid; positions do not represent ancestry.'
                        if repo.branches_only else
                        'History view: vertical position represents ancestry, not time.')
-        self.details.setPlainText(explanation + '\n\nClick a commit to inspect it.\n'
-                                  'T: jump to and fit top commits\n'
-                                  'D: diff one or two selected commits\n'
-                                  'Delete: hide selected nodes\nR: rearrange visible nodes')
         self.render()
+        if repo.branches:
+            self.details.setPlainText(explanation + '\n\nClick a commit to inspect it.\n'
+                                      'T: jump to and fit top commits\n'
+                                      'D: diff one or two selected commits\n'
+                                      'Delete: hide selected nodes\nR: rearrange visible nodes')
         self.view.fit()
     def refresh(self, *_):
         if self.repo:
@@ -336,23 +344,31 @@ class Window(QMainWindow):
         combo.currentIndexChanged.connect(refresh)
         refresh()
         dialog.exec()
-    def show_diff(self, oid):
+    def show_diff(self, oid, repo=None, file_path=None):
+        repo = repo or self.repo
+        info = self.details.cache.get(oid)
+        if info is not None:
+            repo = replace(repo, commits={**repo.commits, oid: info.commit})
         dialog = QDialog(self)
         dialog.setWindowTitle(f'Diff — {oid[:12]} against parent')
         dialog.resize(1250, 800)
         box = QVBoxLayout(dialog)
         box.addWidget(QLabel('Comparison uses the actual Git parent, including commits hidden in collapsed chains.'))
         combo = QComboBox()
-        parents = self.repo.commits[oid].parents
+        parents = repo.commits[oid].parents
         for index, parent in enumerate(parents):
             combo.addItem(f'Parent {index+1}: {parent}', parent)
         if not parents:
             combo.addItem('Empty tree (root commit)', None)
         box.addWidget(combo)
-        diff = DiffViewer(self.repo)
+        diff = DiffViewer(repo)
         box.addWidget(diff, 1)
         def refresh(*_):
             diff.compare(combo.currentData(), oid)
+            if file_path is not None:
+                index = next((i for i, change in enumerate(diff.changes) if change.new_path == file_path), None)
+                if index is not None:
+                    diff.files.setCurrentRow(index)
         combo.currentIndexChanged.connect(refresh)
         refresh()
         dialog.exec()
@@ -396,6 +412,9 @@ class Window(QMainWindow):
             if label is not None:
                 label.setPos((x1+x2)/2+10,(y1+y2)/2-12)
     def render(self):
+        self.details.cancel_pending()
+        self.details.setPlainText('Select a commit to inspect its history and changes.')
+        self.inspected_selection = set()
         self.scene.blockSignals(True)
         self.scene.clear()
         self.nodes = {}
@@ -449,10 +468,46 @@ class Window(QMainWindow):
         self.update_selection_highlights()
         if not self.repo:
             return
-        for item in self.scene.selectedItems():
-            if isinstance(item, Node):
-                c = self.repo.commits[item.oid]
-                self.details.setPlainText(f'Commit: {c.oid}\nBranches: {", ".join(self.repo.branches.get(c.oid, [])) or "—"}\nAuthor: {c.author}\nDate: {c.date}\nParents:\n'+ ('\n'.join(c.parents) or 'Root commit')+'\n\n'+c.message)
+        selected = {item.oid for item in self.scene.selectedItems() if isinstance(item, Node)}
+        newly_selected = selected - self.inspected_selection
+        self.inspected_selection = selected
+        if selected:
+            if newly_selected:
+                oid = sorted(newly_selected)[0]
+            elif self.details.active_oid in selected:
+                oid = self.details.active_oid
+            else:
+                oid = sorted(selected)[0]
+            self.details.show_commit(self.repo, oid)
+        else:
+            self.details.cancel_pending()
+            self.details.setPlainText('Select a commit to inspect its history and changes.')
+    def open_detail_link(self, url):
+        parsed = urlsplit(url.toString())
+        oid = parsed.path
+        if not self.repo or not re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', oid):
+            return
+        if parsed.scheme == 'commit':
+            if oid in self.repo.commits and oid not in self.nodes:
+                if not self.repo.branches_only:
+                    self.expanded.add(oid)
+                self.hidden_nodes.discard(oid)
+                self.render()
+            self.scene.clearSelection()
+            if oid in self.nodes:
+                self.nodes[oid].setSelected(True)
+                self.view.centerOn(self.nodes[oid])
+            else:
+                self.details.show_commit(self.repo, oid)
+        elif parsed.scheme == 'diff':
+            info = self.details.cache.get(oid)
+            if oid in self.repo.commits or info is not None:
+                repo = self.repo if oid in self.repo.commits else replace(self.repo, commits={oid: info.commit})
+                file_path = parse_qs(parsed.query).get('file', [None])[0]
+                self.show_diff(oid, repo=repo, file_path=file_path)
+    def closeEvent(self, event):
+        self.details.cancel_pending()
+        super().closeEvent(event)
     def update_selection_highlights(self):
         selected = {item.oid for item in self.scene.selectedItems() if isinstance(item, Node)}
         ancestry = set()
