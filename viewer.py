@@ -154,9 +154,12 @@ class Window(QMainWindow):
         self.fit_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Space), self)
         self.fit_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
         self.fit_shortcut.activated.connect(self.view.fit)
+        self.hide_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Delete), self.view)
+        self.hide_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self.hide_shortcut.activated.connect(self.hide_selected_nodes)
         self.details = QTextEdit()
         self.details.setReadOnly(True)
-        self.details.setPlainText('Open a Git repository.\n\nWheel: zoom\nDrag background: select multiple · middle-drag: pan\nDrag a node or its label: rearrange\nClick a commit: inspect\nDouble-click a chain label: expand\n\nVertical position represents ancestry, not time.')
+        self.details.setPlainText('Open a Git repository.\n\nWheel: zoom\nDrag background: select multiple · middle-drag: pan\nDrag a node or its label: rearrange\nDelete: hide selected nodes\nClick a commit: inspect\nDouble-click a chain label: expand\n\nVertical position represents ancestry, not time.')
         splitter = QSplitter()
         splitter.addWidget(self.view)
         splitter.addWidget(self.details)
@@ -198,9 +201,15 @@ class Window(QMainWindow):
         self.render()
         self.view.fit()
     def hide_node(self, oid):
+        self._hide_nodes({oid})
+    def hide_selected_nodes(self):
+        self._hide_nodes({item.oid for item in self.scene.selectedItems() if isinstance(item, Node)})
+    def _hide_nodes(self, oids):
+        if not oids:
+            return
         # Retain every visible position so hiding never rearranges other nodes.
         self.manual_positions.update({o: (n.pos().x(), n.pos().y()) for o,n in self.nodes.items()})
-        self.hidden_nodes.add(oid)
+        self.hidden_nodes.update(oids)
         self.render()
     def show_hidden_nodes(self):
         self.hidden_nodes.clear()

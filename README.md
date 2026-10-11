@@ -30,6 +30,7 @@ Alternatively run `python main.py` and use Open. On Arch Linux, installing
 - Manual positions survive expansion, collapse, and refresh within the same
   repository during the session. They are not saved after closing the app.
 - Right-click a node or its label → Hide node. Connections bypass it.
+  Press Delete while the graph has focus to hide all selected nodes.
   Show hidden nodes restores them; expanding a chain also reveals its hidden nodes.
   Hidden state lasts for the session and is retained on refresh.
 - Rearrange visible nodes automatically lays out only the visible graph.
