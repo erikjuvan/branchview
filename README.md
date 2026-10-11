@@ -26,6 +26,11 @@ larger initial budget or `--max-commits 0` for all history.
 
 ## Controls
 
+- Repositories open in independent, closable, movable tabs. Each tab retains its
+  graph, selection, camera, sidebar and display options. Opening the same checkout
+  again selects its existing tab. Ctrl+O opens, Ctrl+W closes the current tab,
+  and Ctrl+Tab / Ctrl+Shift+Tab switch tabs. Graph shortcuts affect the active tab.
+
 - The fixed top section of the right sidebar lists available graph shortcuts.
   It updates with the selection: D diffs one commit or compares two; Delete is
   shown for any selection and requires graph focus. With three or more commits,

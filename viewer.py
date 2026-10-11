@@ -209,8 +209,9 @@ class ChainLabel(QGraphicsTextItem):
         event.accept()
 
 class Window(QMainWindow):
-    def __init__(self, path=None, branches_only=False, history_limit=500, all_branch_tips=False):
+    def __init__(self, path=None, branches_only=False, history_limit=500, all_branch_tips=False, open_callback=None):
         super().__init__()
+        self.open_callback = open_callback
         self.repo = None
         self.expanded = set()
         self.hidden_nodes = set()
@@ -324,6 +325,9 @@ class Window(QMainWindow):
         if path:
             self.load(path)
     def open(self):
+        if self.open_callback is not None:
+            self.open_callback()
+            return
         path = QFileDialog.getExistingDirectory(self, 'Select Git repository')
         if path:
             self.load(path)
@@ -762,9 +766,13 @@ class Window(QMainWindow):
                 file_path = parse_qs(parsed.query).get('file', [None])[0]
                 self.show_diff(oid, repo=repo, file_path=file_path)
     def closeEvent(self, event):
+        self.shutdown()
+        super().closeEvent(event)
+    def shutdown(self):
         self.loader.cancel()
         self.details.cancel_pending()
-        super().closeEvent(event)
+        if self.search_dialog is not None:
+            self.search_dialog.close()
     def update_selection_highlights(self):
         selected = {item.display_id for item in self.scene.selectedItems() if isinstance(item, Node)}
         ancestry = set()

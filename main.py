@@ -1,7 +1,7 @@
 import argparse
 import sys
 from PySide6.QtWidgets import QApplication
-from viewer import Window
+from workspace import WorkspaceWindow
 
 def main():
     parser = argparse.ArgumentParser(description='Read-only terminal-branch Git graph')
@@ -15,7 +15,7 @@ def main():
     if args.max_commits < 0:
         parser.error('--max-commits must be non-negative')
     app = QApplication(sys.argv[:1])
-    window = Window(args.repository, branches_only=args.branches_only, history_limit=args.max_commits or None,
+    window = WorkspaceWindow(args.repository, branches_only=args.branches_only, history_limit=args.max_commits or None,
                     all_branch_tips=args.all_branch_tips)
     window.show()
     return app.exec()
