@@ -21,8 +21,10 @@ class DiffRow:
 
 
 def align_lines(before: str, after: str) -> list[DiffRow]:
-    # Keep terminators in matching so a missing final newline is a real change.
-    old, new = before.splitlines(keepends=True), after.splitlines(keepends=True)
+    # Compare visible content across Windows/Unix line endings, while retaining
+    # the distinction between a final newline and no final newline.
+    normalized = [text.replace('\r\n', '\n').replace('\r', '\n') for text in (before, after)]
+    old, new = [text.splitlines(keepends=True) for text in normalized]
     rows = []
     for tag, i1, i2, j1, j2 in SequenceMatcher(None, old, new).get_opcodes():
         for i, j in zip_longest(range(i1, i2), range(j1, j2)):
@@ -31,6 +33,18 @@ def align_lines(before: str, after: str) -> list[DiffRow]:
                                 j+1 if j is not None else None,
                                 new[j].rstrip('\r\n') if j is not None else '', tag != 'equal'))
     return rows
+
+
+def line_endings(text: str) -> str:
+    styles = []
+    if '\r\n' in text:
+        styles.append('CRLF')
+    remainder = text.replace('\r\n', '')
+    if '\n' in remainder:
+        styles.append('LF')
+    if '\r' in remainder:
+        styles.append('CR')
+    return '/'.join(styles) or 'none'
 
 
 class LineNumbers(QWidget):
@@ -54,7 +68,19 @@ class DiffEditor(QPlainTextEdit):
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
         self.setTabStopDistance(self.fontMetrics().horizontalAdvance(' ') * 4)
-        self.setStyleSheet('QPlainTextEdit { background: #24272d; color: #e1e5eb; border: none; }')
+        self.setStyleSheet('''
+            QPlainTextEdit { background: #24272d; color: #e1e5eb; border: none; }
+            QScrollBar:vertical { background: #24272d; width: 12px; margin: 0; }
+            QScrollBar:horizontal { background: #24272d; height: 12px; margin: 0; }
+            QScrollBar::handle { background: #59616e; border-radius: 4px; }
+            QScrollBar::handle:hover { background: #75808f; }
+            QScrollBar::handle:vertical { min-height: 24px; }
+            QScrollBar::handle:horizontal { min-width: 24px; }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+            QScrollBar::add-page, QScrollBar::sub-page { background: none; }
+            QAbstractScrollArea::corner { background: #24272d; }
+        ''')
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.gutter = LineNumbers(self)
@@ -208,6 +234,9 @@ class DiffViewer(QWidget):
                     raise ValueError('File has too many lines for the text preview (limit: 20,000).')
                 rows = align_lines(before, after)
                 endings = []
+                old_endings, new_endings = line_endings(before), line_endings(after)
+                if old and new and old_endings != new_endings:
+                    endings.append(f'Line endings: {old_endings} → {new_endings}')
                 for label, data in [('Before', old), ('After', new)]:
                     if data and not data.endswith(b'\n'):
                         endings.append(f'{label}: no newline at end of file')

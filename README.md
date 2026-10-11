@@ -44,6 +44,8 @@ Alternatively run `python main.py` and use Open. On Arch Linux, installing
   and synchronized scrolling. File contents load when selected. Binary files show
   a notice; submodules show commit IDs. Text previews are limited to 2 MB and
   20,000 lines per file, and non-UTF-8 text uses replacement characters.
+  Line-ending styles (CRLF/LF/CR) are normalized for line matching; conversions
+  are reported above the diff. Missing final newlines remain highlighted changes.
 - Space or Fit: fit entire graph. Click a commit: metadata and full message.
 - Click a collapsed-chain label: inspect hidden commits.
 - Double-click a chain label: expand it. Collapse all restores compact view.

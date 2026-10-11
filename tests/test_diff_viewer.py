@@ -6,12 +6,61 @@ from unittest.mock import patch
 
 from PySide6.QtWidgets import QApplication, QDialog
 
-from diff_viewer import DiffViewer, align_lines
+from diff_viewer import DiffViewer, align_lines, line_endings
 from git_reader import Commit, Repository, ChangedFile, read_repository, read_changed_files, read_blob
 from viewer import Window
 
 
 class DiffViewerTest(unittest.TestCase):
+    def test_windows_unix_line_endings_preserve_shared_lines(self):
+        before = ''.join(c+'\r\n' for c in 'abcdefg')
+        after = ''.join(c+'\n' for c in 'abcdefghijkl')
+        rows = align_lines(before, after)
+        self.assertFalse(any(row.changed for row in rows[:7]))
+        self.assertTrue(all(row.changed and row.old_number is None for row in rows[7:]))
+        self.assertEqual([row.new_text for row in rows[7:]], list('hijkl'))
+        self.assertFalse(any(row.changed for row in align_lines('a\r\nb\r\n', 'a\nb\n')))
+        self.assertFalse(any(row.changed for row in align_lines('a\rb\r', 'a\nb\n')))
+        self.assertTrue(align_lines('a\r\n', 'a')[0].changed)
+        self.assertTrue(align_lines('a \r\n', 'a\n')[0].changed)
+        self.assertEqual(line_endings(before), 'CRLF')
+        self.assertEqual(line_endings(after), 'LF')
+        self.assertEqual(line_endings('a\r\nb\n'), 'CRLF/LF')
+
+    def test_real_git_line_ending_conversion(self):
+        app = QApplication.instance() or QApplication([])
+        with tempfile.TemporaryDirectory() as path:
+            def git(*args):
+                return subprocess.check_output(['git', '-C', path, *args], text=True,
+                                               stderr=subprocess.DEVNULL).strip()
+
+            git('init', '-b', 'main')
+            git('config', 'user.name', 'Tester')
+            git('config', 'user.email', 'tester@example.invalid')
+            git('config', 'core.autocrlf', 'false')
+            file = Path(path)/'README.txt'
+            file.write_bytes(''.join(c+'\r\n' for c in 'abcdefg').encode())
+            git('add', '.')
+            git('commit', '-m', 'Windows lines')
+            source = git('rev-parse', 'HEAD')
+            file.write_bytes(''.join(c+'\n' for c in 'abcdefghijkl').encode())
+            git('commit', '-am', 'Append lines and convert endings')
+            target = git('rev-parse', 'HEAD')
+            viewer = DiffViewer(read_repository(path))
+            self.addCleanup(viewer.close)
+            viewer.compare(source, target)
+            self.assertIn('+5 / −0', viewer.status.text())
+            self.assertIn('Line endings: CRLF → LF', viewer.status.text())
+            self.assertEqual(viewer.left.numbers, list(range(1, 8))+[None]*5)
+            self.assertEqual(viewer.right.numbers, list(range(1, 13)))
+            selections = viewer.left.extraSelections()
+            self.assertEqual(len(selections), 5)
+            self.assertTrue(all(s.cursor.blockNumber() >= 7 for s in selections))
+            self.assertTrue(all(s.format.background().color().name() == '#30343c' for s in selections))
+            viewer.compare(target, source)
+            self.assertIn('+0 / −5', viewer.status.text())
+            self.assertIn('Line endings: LF → CRLF', viewer.status.text())
+
     def test_submodule_and_line_limit_notices(self):
         app = QApplication.instance() or QApplication([])
         repo = Repository('synthetic', {'tip': Commit('tip', (), 'Tester', '', '')}, {'tip': ['main']})
