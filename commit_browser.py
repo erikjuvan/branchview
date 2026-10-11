@@ -38,7 +38,7 @@ class CommitBrowser(QDialog):
         box.addWidget(self.filter)
         splitter = QSplitter()
         self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(['Files'])
+        self.tree.setHeaderHidden(True)
         splitter.addWidget(self.tree)
         self.preview = QPlainTextEdit()
         self.preview.setReadOnly(True)
