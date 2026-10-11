@@ -46,6 +46,12 @@ larger initial budget or `--max-commits 0` for all history.
   (or select it and press Enter) to reveal its tip, select it and zoom to a readable
   view. Hidden or collapsed tips are revealed. Drag the divider between the list
   and commit details to adjust their heights.
+- Remote branch labels and remote-only branch nodes use muted green/teal shades,
+  with a stable shade for each remote. The sidebar uses the same colors. Local
+  branches retain blue; worktree labels retain purple. Remote label colors remain
+  visible during selection, while nodes and ancestry use the existing highlights.
+  Commits shared by local and remote tips retain local node styling, with each
+  remote label individually colored. Hover a remote label for its remote name.
 
 - B with one commit selected, or right-click → Browse files at this commit,
   opens a commit-pinned file tree with path filtering and background text previews.

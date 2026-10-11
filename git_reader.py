@@ -65,6 +65,7 @@ class Repository:
     worktrees: list[Worktree] = field(default_factory=list)
     branch_refs: dict[str, str] = field(default_factory=dict)
     all_branch_tips: bool = False
+    remote_names: tuple[str, ...] = ()
 
 def read_repository(path: str, remote: bool = False, branches_only: bool = False,
                     cancelled=None, progress=None, commit_limit: int | None = None,
@@ -126,7 +127,8 @@ def read_repository(path: str, remote: bool = False, branches_only: bool = False
     report('Reading worktree checkouts')
     worktrees = read_worktrees(path, cancelled=cancelled)
     return Repository(path, commits, branches, git('rev-parse', '--is-shallow-repository').strip() == 'true',
-                      branches_only, commit_limit, incomplete, worktrees, branch_refs, all_branch_tips)
+                      branches_only, commit_limit, incomplete, worktrees, branch_refs, all_branch_tips,
+                      tuple(git('remote').splitlines()) if remote else ())
 
 def read_diff(repo: Repository, oid: str, parent: str | None) -> str:
     """Compare a commit to an actual parent (or empty tree for a root)."""

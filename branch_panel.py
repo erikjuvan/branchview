@@ -1,6 +1,8 @@
 """A searchable list of the branch refs in the current repository snapshot."""
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem
+from PySide6.QtGui import QColor
+from branch_colors import remote_name, remote_color
 
 
 class BranchPanel(QWidget):
@@ -38,10 +40,16 @@ class BranchPanel(QWidget):
             item = QListWidgetItem(name)
             item.setData(Qt.ItemDataRole.UserRole, (name, oid))
             item.setToolTip(f'{ref}\n{oid}')
+            remote = remote_name(repo, name)
+            item.setForeground(remote_color(remote) if remote is not None else QColor('#75baff'))
+            if remote is not None:
+                item.setToolTip(item.toolTip()+'\nRemote: '+remote)
             self.list.addItem(item)
             if name == selected_name:
                 self.list.setCurrentItem(item)
         self.heading.setText(f'Branches ({len(branches):,})')
+        self.heading.setToolTip('Local branches: blue. Remote branches: muted teal, with a stable shade per remote.\n'
+                                'Checked-out worktree labels in the graph remain purple.')
         self.filter_branches(self.filter.text())
 
     def filter_branches(self, query):

@@ -18,6 +18,7 @@ from shortcut_panel import ShortcutPanel
 from commit_browser import CommitBrowser
 from vscode_open import SnapshotOpenDialog
 from branch_panel import BranchPanel
+from branch_colors import remote_name, remote_color
 
 class View(QGraphicsView):
     def __init__(self, scene):
@@ -72,8 +73,12 @@ class Node(QGraphicsEllipseItem):
         self.window = window
         self.tip = tip
         self.checked_out = any(wt.active and wt.head == oid for wt in window.repo.worktrees) if window.repo else False
+        names = window.repo.branches.get(oid, []) if window.repo else []
+        remotes = [remote_name(window.repo, name) for name in names]
+        self.base_color = (remote_color(sorted(remotes)[0]) if remotes and all(remotes) else
+                           QColor('#75baff' if tip else '#b5bdc9'))
         self.setPos(x,y)
-        self.setBrush(QColor('#75baff' if tip else '#b5bdc9'))
+        self.setBrush(self.base_color)
         self.setPen(QPen(QColor('#d5dce6'), 1))
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
@@ -105,7 +110,7 @@ class Node(QGraphicsEllipseItem):
         elif active:
             fill, border, width = '#59616e', '#798391', 1
         else:
-            fill, border, width = ('#75baff' if self.tip else '#b5bdc9'), '#d5dce6', 1
+            fill, border, width = self.base_color, '#d5dce6', 1
         self.setBrush(QColor(fill))
         pen = QPen(QColor(border), width)
         pen.setCosmetic(True)
@@ -132,6 +137,7 @@ class NodeLabel(QGraphicsTextItem):
         self.node = node
         self.base_color = QColor('#e1e5eb')
         self.worktree_badge = False
+        self.remote_branch = False
         self.included_tip = False
         self.setCursor(Qt.CursorShape.ArrowCursor)
     def set_included_tip(self, included):
@@ -743,13 +749,18 @@ class Window(QMainWindow):
                     title = NodeLabel(name+(' [WT]' if trees else ''), node)
                     title.set_included_tip(included)
                     title.worktree_badge = bool(trees)
-                    title.base_color = QColor('#c792ea' if trees else '#d8ab65' if included else '#75baff')
+                    remote = remote_name(self.repo, name)
+                    title.remote_branch = remote is not None
+                    title.base_color = (QColor('#c792ea') if trees else remote_color(remote) if remote is not None else
+                                        QColor('#d8ab65' if included else '#75baff'))
                     title.setDefaultTextColor(title.base_color)
                     tooltip = 'Tip is already included in another loaded branch’s history. Select it for merge/first-parent details.' if included else ''
                     if self.repo.all_branch_tips and self.repo.history_limited and not included:
                         tooltip = 'Inclusion may be outside the loaded history. Select this tip for full Git relationship details.'
                     if trees:
                         tooltip += '\nChecked out in worktree:\n'+'\n'.join(wt.path for wt in trees)
+                    if remote is not None:
+                        tooltip += '\nRemote: '+remote
                     title.setToolTip(tooltip.strip())
                     titles.append(title)
                 detached = [wt for wt in checkouts if wt.detached]
@@ -865,7 +876,7 @@ class Window(QMainWindow):
             node.highlight(oid in ancestry, active)
         for label in self.labels:
             oid = label.node.display_id
-            color = label.base_color if label.worktree_badge else QColor('#ffd166') if oid in selected else QColor('#80ead9') if oid in ancestry else label.base_color
+            color = label.base_color if label.worktree_badge or label.remote_branch else QColor('#ffd166') if oid in selected else QColor('#80ead9') if oid in ancestry else label.base_color
             label.setDefaultTextColor(color)
             label.setOpacity(.6 if active and oid not in ancestry and not label.worktree_badge else 1)
             label.update()
