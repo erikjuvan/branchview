@@ -64,6 +64,10 @@ class ShortcutPanel(QFrame):
             note = 'Delete requires graph focus. Commit details remain below.'
         else:
             note = 'Select a commit to enable diff and hide shortcuts.'
+        if getattr(window, 'open_callback', None) is not None:
+            for key, action in [('Ctrl+O', 'Open repositories from folder'), ('Ctrl+W', 'Close current repository tab'),
+                                ('Ctrl+Tab', 'Next repository tab'), ('Ctrl+Shift+Tab', 'Previous repository tab')]:
+                entries.append((QKeySequence(key).toString(QKeySequence.SequenceFormat.NativeText), action, ''))
         self.note.setText(note)
         if entries == self.entries:
             return

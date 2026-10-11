@@ -4,6 +4,8 @@ import unittest
 from pathlib import Path
 
 from PySide6.QtGui import QShortcut
+from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
 from workspace import WorkspaceWindow
 from ui_helpers import application, wait_for_load
 
@@ -48,6 +50,18 @@ class WorkspaceTest(unittest.TestCase):
                 self.assertEqual(a.view.transform(), transform)
                 self.assertTrue(a.nodes[oid].isSelected())
                 self.assertTrue(a.diff_shortcut.isEnabled())
+                activations = []
+                a.top_shortcut.activated.connect(lambda: activations.append('a'))
+                b.top_shortcut.activated.connect(lambda: activations.append('b'))
+                window.activateWindow()
+                a.view.setFocus()
+                QTest.qWait(30)
+                QTest.keyClick(a.view, Qt.Key.Key_T)
+                self.assertEqual(activations, ['a'])
+                QTest.keyClick(a.view, Qt.Key.Key_Tab, Qt.KeyboardModifier.ControlModifier)
+                self.assertIs(window.tabs.currentWidget(), b)
+                QTest.keyClick(b.view, Qt.Key.Key_T)
+                self.assertEqual(activations, ['a', 'b'])
                 window.close_tab(window.tabs.indexOf(a))
                 self.assertEqual(window.tabs.count(), 1)
                 self.assertIsNone(a.loader.active)

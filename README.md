@@ -19,6 +19,21 @@ python main.py /path/to/repository
 Alternatively run `python main.py` and use Open. On Arch Linux, installing
 `pyside6` with the system package manager is another option.
 
+Open accepts a repository or a folder containing repositories and adds one tab
+per checkout. By default it checks the selected folder and its immediate child
+folders. Enable **Recursive** in the Open dialog (or pass `--recursive` on the
+command line) to search all descendant folders. Submodules and their contents
+are excluded, including older embedded submodules. Independent nested repositories
+and linked worktrees are included; Git metadata and directory links/junctions
+are not traversed. Scanning runs in the background; Cancel batch open stops the
+scan, queued opens and unfinished batch loads while retaining existing tabs.
+Load failures are summarized once; other repositories still open normally.
+
+```sh
+python main.py /path/to/projects
+python main.py --recursive /path/to/projects
+```
+
 For large repositories, start with `python main.py --branches-only /path/to/repository`
 to avoid loading history on the first open.
 History mode defaults to a 500-commit budget. Use `--max-commits 5000` for a

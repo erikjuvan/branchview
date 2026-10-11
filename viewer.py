@@ -290,6 +290,8 @@ class Window(QMainWindow):
                                ('Fit', self.view.fit), ('Top commits', self.fit_top_commits),
                                ('Rearrange visible nodes', self.rearrange_visible), ('Collapse all', self.collapse),
                                ('Show hidden nodes', self.show_hidden_nodes)]:
+            if name == 'Open…' and self.open_callback is not None:
+                continue
             toolbar.addAction(name, callback)
         self.remote = QCheckBox('Include remote branches')
         self.remote.toggled.connect(self.refresh)
@@ -390,6 +392,9 @@ class Window(QMainWindow):
         self.cancel_action.setEnabled(False)
         self.restore_load_options()
         self.statusBar().showMessage('Load canceled · previous view retained' if self.repo else 'Load canceled · Open a repository to try again')
+        handler = getattr(self, 'load_cancel_handler', None)
+        if handler is not None:
+            handler()
     def load_failed(self, error):
         self.loading = False
         self.pending_path = None
@@ -397,7 +402,11 @@ class Window(QMainWindow):
         self.cancel_action.setEnabled(False)
         self.restore_load_options()
         self.statusBar().showMessage('Repository loading failed')
-        QMessageBox.warning(self, 'Cannot open repository', error)
+        handler = getattr(self, 'load_error_handler', None)
+        if handler is not None:
+            handler(error)
+        else:
+            QMessageBox.warning(self, 'Cannot open repository', error)
     def apply_repository(self, repo, graph, positions, options):
         keep_view = self.preserve_view and self.repo is not None and self.repo.path == repo.path
         if keep_view:
@@ -444,7 +453,7 @@ class Window(QMainWindow):
             self.view.fit()
         self.update_history_controls()
     def refresh(self, *_):
-        path = self.pending_path if self.loading else self.repo.path if self.repo else None
+        path = self.pending_path if self.loading else self.repo.path if self.repo else getattr(self, 'repository_path', None)
         if path:
             self.load(path)
     def collapse(self):
