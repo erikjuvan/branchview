@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (QMainWindow, QGraphicsView, QGraphicsScene,
 from git_reader import read_repository
 from diff_viewer import DiffViewer
 from commit_sidebar import CommitSidebar
+from search import SearchDialog
 from graph import build_graph, hide_nodes
 from layout import layout, branch_layout
 
@@ -184,6 +185,7 @@ class Window(QMainWindow):
         self.labels = []
         self.edge_items = []
         self.parent_edges = {}
+        self.search_dialog = None
         self.setStyleSheet("""
             QMainWindow, QWidget { background: #303238; color: #e1e5eb; }
             QGraphicsView { background: #292c31; border: 1px solid #484c54; }
@@ -208,6 +210,8 @@ class Window(QMainWindow):
         self.top_shortcut = QShortcut(QKeySequence(Qt.Key.Key_T), self)
         self.top_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
         self.top_shortcut.activated.connect(self.fit_top_commits)
+        self.search_shortcut = QShortcut(QKeySequence.StandardKey.Find, self)
+        self.search_shortcut.activated.connect(self.open_search)
         self.hide_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Delete), self.view)
         self.hide_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self.hide_shortcut.activated.connect(self.hide_selected_nodes)
@@ -229,7 +233,7 @@ class Window(QMainWindow):
         self.setCentralWidget(splitter)
         toolbar = QToolBar()
         self.addToolBar(toolbar)
-        for name, callback in [('Open…', self.open), ('Refresh', self.refresh),
+        for name, callback in [('Open…', self.open), ('Search…', self.open_search), ('Refresh', self.refresh),
                                ('Fit', self.view.fit), ('Top commits', self.fit_top_commits),
                                ('Rearrange visible nodes', self.rearrange_visible), ('Collapse all', self.collapse),
                                ('Show hidden nodes', self.show_hidden_nodes)]:
@@ -248,6 +252,15 @@ class Window(QMainWindow):
         path = QFileDialog.getExistingDirectory(self, 'Select Git repository')
         if path:
             self.load(path)
+    def open_search(self):
+        if self.search_dialog is None:
+            self.search_dialog = SearchDialog(self)
+        self.search_dialog.set_repository(self.repo)
+        self.search_dialog.show()
+        self.search_dialog.raise_()
+        self.search_dialog.activateWindow()
+        self.search_dialog.query.setFocus()
+        self.search_dialog.query.selectAll()
     def load(self, path):
         try:
             repo = read_repository(path, self.remote.isChecked(), self.branches_only.isChecked())
@@ -264,6 +277,8 @@ class Window(QMainWindow):
             self.hidden_nodes.clear()
         self.manual_positions = self.positions_by_mode[repo.branches_only]
         self.repo = repo
+        if self.search_dialog is not None:
+            self.search_dialog.set_repository(repo)
         self.details.reset_repository(repo)
         self.expanded.clear()
         explanation = ('Branches only: ancestor history is not loaded.\n'

@@ -24,6 +24,10 @@ to avoid loading history on the first open.
 
 ## Controls
 
+- Ctrl+F or Search: find loaded commits by hash, full message, or branch name.
+  Enter or double-click jumps to the result, revealing collapsed or hidden nodes.
+  With an empty query, show branch tips. Branch-only mode searches only tip metadata.
+
 - Wheel: zoom around cursor. Left-drag blank background: select multiple nodes. Middle-drag: pan.
 - Ctrl-click adds/removes a node from selection. Drag selected nodes or their
   labels to move the selected group.
