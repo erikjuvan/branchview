@@ -13,10 +13,13 @@ class TreeFile:
     kind: str
 
 
-def read_tree(repo_path, commit, cancelled=None):
+def read_tree(repo_path, commit, cancelled=None, path=None):
     if not re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', commit):
         raise ValueError('Expected a full commit hash')
-    raw = run_git(repo_path, ['ls-tree', '-r', '-z', '--full-tree', commit], cancelled=cancelled)
+    args = ['ls-tree', '-r', '-z', '--full-tree', commit]
+    if path is not None:
+        args.extend(['--', ':(literal)'+path])
+    raw = run_git(repo_path, args, cancelled=cancelled)
     entries = []
     for record in raw.split(b'\0'):
         if record:

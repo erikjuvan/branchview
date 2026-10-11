@@ -3,15 +3,18 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QLabel, QLineEdit, QSplitter,
-                               QTreeWidget, QTreeWidgetItem, QPlainTextEdit)
+                               QTreeWidget, QTreeWidgetItem, QPlainTextEdit, QHBoxLayout, QPushButton)
 from background_task import BackgroundTask
 from commit_files import read_tree, preview_file
+from vscode_open import SnapshotOpenDialog
 
 
 class CommitBrowser(QDialog):
     def __init__(self, repo_path, commit, parent=None):
         super().__init__(parent)
         self.repo_path, self.commit = repo_path, commit
+        self.selected_file = None
+        self.exports = []
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setWindowTitle(f'{Path(repo_path).name} @ {commit[:12]} — Files')
         self.resize(1050, 720)
@@ -20,6 +23,16 @@ class CommitBrowser(QDialog):
         heading.setTextFormat(Qt.TextFormat.PlainText)
         heading.setWordWrap(True)
         box.addWidget(heading)
+        row = QHBoxLayout()
+        open_commit = QPushButton('Open whole commit in VS Code')
+        open_commit.clicked.connect(lambda: self.open_vscode())
+        row.addWidget(open_commit)
+        self.open_file = QPushButton('Open selected file in VS Code')
+        self.open_file.setEnabled(False)
+        self.open_file.clicked.connect(lambda: self.open_vscode(self.selected_file))
+        row.addWidget(self.open_file)
+        row.addStretch()
+        box.addLayout(row)
         self.filter = QLineEdit()
         self.filter.setPlaceholderText('Filter files by path…')
         box.addWidget(self.filter)
@@ -34,6 +47,7 @@ class CommitBrowser(QDialog):
         splitter.setSizes([330, 720])
         box.addWidget(splitter, 1)
         self.status = QLabel('Reading commit tree…')
+        self.status.setTextFormat(Qt.TextFormat.PlainText)
         box.addWidget(self.status)
         self.tree_task = BackgroundTask(self)
         self.preview_task = BackgroundTask(self)
@@ -82,13 +96,22 @@ class CommitBrowser(QDialog):
         self.preview_task.cancel()
         entry = item.data(0, Qt.ItemDataRole.UserRole) if item else None
         self.selected_file = entry
+        self.open_file.setEnabled(entry is not None and entry.kind == 'blob')
         if entry is None:
             self.preview.clear()
             return
         self.preview.setPlainText('Reading '+entry.path+'…')
         self.preview_task.start(lambda cancelled, _: preview_file(self.repo_path, entry, cancelled))
 
+    def open_vscode(self, entry=None):
+        dialog = SnapshotOpenDialog(self.repo_path, self.commit, self, entry)
+        self.exports.append(dialog)
+        dialog.destroyed.connect(lambda: self.exports.remove(dialog) if dialog in self.exports else None)
+        dialog.show()
+
     def closeEvent(self, event):
         self.tree_task.cancel()
         self.preview_task.cancel()
+        for dialog in list(self.exports):
+            dialog.close()
         super().closeEvent(event)

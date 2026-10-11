@@ -46,6 +46,21 @@ larger initial budget or `--max-commits 0` for all history.
   It shows all tracked files, including unchanged ones. The checkout is untouched.
   Binary/large files, symlinks and Git LFS pointers have descriptive previews;
   submodules appear as references without loading their contents.
+- V with one commit selected, or right-click → Open commit in VS Code, exports
+  all tracked files to a separate cached snapshot and opens a named VS Code
+  workspace. The file browser also opens individual historical files in VS Code.
+  Exports run in the background and can be canceled. Unmodified snapshots are
+  reused; edited copies are retained and subsequent opens prepare a fresh copy.
+  Snapshots persist after closing the app. Use **Snapshots…** to delete copies you
+  have finished using, including any edits made in those copies. Source Git
+  repositories, worktrees and uncommitted files are never changed. No VS Code
+  extension is needed; the app detects VS Code or lets you choose its executable.
+  Submodule contents and external LFS objects are not fetched. Symlinks are
+  exported as text files containing their targets, with a notice. Git archive
+  export attributes and checkout filters are not applied: regular files retain
+  their exact committed bytes.
+  The diff viewer has **Open before/after in VS Code** buttons for the selected
+  changed file; deleted or added files only enable the side that exists.
 
 - Repositories open in independent, closable, movable tabs. Each tab retains its
   graph, selection, camera, sidebar and display options. Opening the same checkout

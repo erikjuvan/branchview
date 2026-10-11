@@ -41,6 +41,8 @@ class BackgroundTask(QObject):
         self.serial = 0
         self.jobs = {}
         self.active = None
+        if parent is not None:
+            parent.destroyed.connect(self.cancel)
 
     def start(self, operation):
         self.cancel()

@@ -16,6 +16,7 @@ from graph import build_graph, hide_nodes
 from layout import layout, branch_layout
 from shortcut_panel import ShortcutPanel
 from commit_browser import CommitBrowser
+from vscode_open import SnapshotOpenDialog
 
 class View(QGraphicsView):
     def __init__(self, scene):
@@ -270,7 +271,10 @@ class Window(QMainWindow):
         self.diff_shortcut.activated.connect(self.diff_selected_nodes)
         self.browse_shortcut = QShortcut(QKeySequence(Qt.Key.Key_B), self)
         self.browse_shortcut.activated.connect(self.browse_selected_commit)
+        self.vscode_shortcut = QShortcut(QKeySequence(Qt.Key.Key_V), self)
+        self.vscode_shortcut.activated.connect(self.open_selected_in_vscode)
         self.commit_browsers = []
+        self.snapshot_dialogs = []
         self.details = CommitSidebar()
         self.details.setReadOnly(True)
         self.details.anchorClicked.connect(self.open_detail_link)
@@ -486,6 +490,8 @@ class Window(QMainWindow):
         menu = QMenu(self)
         browse = menu.addAction('Browse files at this commit…')
         browse.triggered.connect(lambda: QTimer.singleShot(0, lambda: self.browse_commit(oid)))
+        vscode = menu.addAction('Open commit in VS Code…')
+        vscode.triggered.connect(lambda: QTimer.singleShot(0, lambda: self.open_commit_in_vscode(oid)))
         action = menu.addAction('Hide node')
         action.triggered.connect(lambda: QTimer.singleShot(0, lambda: self.hide_node(oid)))
         selected = {item.oid for item in self.scene.selectedItems() if isinstance(item, Node)}
@@ -498,6 +504,16 @@ class Window(QMainWindow):
         selected = {item.oid for item in self.scene.selectedItems() if isinstance(item, Node)}
         if len(selected) == 1:
             self.browse_commit(next(iter(selected)))
+    def open_selected_in_vscode(self):
+        selected = {item.oid for item in self.scene.selectedItems() if isinstance(item, Node)}
+        if len(selected) == 1:
+            self.open_commit_in_vscode(next(iter(selected)))
+    def open_commit_in_vscode(self, oid):
+        if self.repo:
+            dialog = SnapshotOpenDialog(self.repo.path, oid, self)
+            self.snapshot_dialogs.append(dialog)
+            dialog.destroyed.connect(lambda: self.snapshot_dialogs.remove(dialog) if dialog in self.snapshot_dialogs else None)
+            dialog.show()
     def browse_commit(self, oid):
         if not self.repo:
             return
@@ -805,6 +821,8 @@ class Window(QMainWindow):
             self.search_dialog.close()
         for browser in list(self.commit_browsers):
             browser.close()
+        for dialog in list(self.snapshot_dialogs):
+            dialog.close()
     def update_selection_highlights(self):
         selected = {item.display_id for item in self.scene.selectedItems() if isinstance(item, Node)}
         ancestry = set()

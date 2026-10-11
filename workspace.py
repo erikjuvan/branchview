@@ -10,6 +10,7 @@ from git_process import run_git
 from viewer import Window
 from folder_open_dialog import FolderOpenDialog
 from repository_scan import RepositoryScanner
+from vscode_open import SnapshotCacheDialog
 
 
 def path_key(path):
@@ -55,6 +56,7 @@ class WorkspaceWindow(QMainWindow):
         self.mounted_page = None
         self.addToolBar(toolbar)
         toolbar.addAction('Open…', self.open)
+        toolbar.addAction('Snapshots…', self.manage_snapshots)
         self.cancel_scan_action = toolbar.addAction('Cancel batch open', self.cancel_batch)
         self.cancel_scan_action.setEnabled(False)
         self.open_shortcut = QShortcut(QKeySequence.StandardKey.Open, self)
@@ -73,6 +75,9 @@ class WorkspaceWindow(QMainWindow):
         dialog = FolderOpenDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.open_folder(dialog.path.text().strip(), dialog.recursive.isChecked())
+
+    def manage_snapshots(self):
+        SnapshotCacheDialog(self).exec()
 
     def open_folder(self, path, recursive=False):
         self.cancel_batch()

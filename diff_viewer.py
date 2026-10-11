@@ -7,7 +7,7 @@ from subprocess import TimeoutExpired
 from PySide6.QtCore import Qt, QRect, QSize
 from PySide6.QtGui import QColor, QFontDatabase, QPainter, QTextCursor, QTextFormat
 from PySide6.QtWidgets import (QWidget, QPlainTextEdit, QTextEdit, QVBoxLayout,
-                               QSplitter, QListWidget, QLabel)
+                               QSplitter, QListWidget, QLabel, QPushButton, QDialog)
 from git_reader import read_changed_files, read_blob
 
 
@@ -146,6 +146,7 @@ class DiffViewer(QWidget):
         self.changes = []
         self.source = self.target = None
         self._syncing = False
+        self.exports = []
         box = QVBoxLayout(self)
         box.setContentsMargins(0, 0, 0, 0)
         self.status = QLabel()
@@ -161,13 +162,20 @@ class DiffViewer(QWidget):
         self.right = DiffEditor('#244b37')
         self.old_title = QLabel()
         self.new_title = QLabel()
-        for title, editor in [(self.old_title, self.left), (self.new_title, self.right)]:
+        self.open_before = QPushButton('Open before in VS Code')
+        self.open_after = QPushButton('Open after in VS Code')
+        self.open_before.setEnabled(False)
+        self.open_after.setEnabled(False)
+        self.open_before.clicked.connect(lambda: self.open_historical_file(True))
+        self.open_after.clicked.connect(lambda: self.open_historical_file(False))
+        for title, editor, button in [(self.old_title, self.left, self.open_before), (self.new_title, self.right, self.open_after)]:
             title.setTextFormat(Qt.TextFormat.PlainText)
             title.setWordWrap(True)
             panel = QWidget()
             layout = QVBoxLayout(panel)
             layout.setContentsMargins(6, 6, 6, 0)
             layout.addWidget(title)
+            layout.addWidget(button)
             layout.addWidget(editor, 1)
             columns.addWidget(panel)
         splitter.addWidget(columns)
@@ -190,6 +198,8 @@ class DiffViewer(QWidget):
         self.files.blockSignals(True)
         self.files.clear()
         self.changes = []
+        self.open_before.setEnabled(False)
+        self.open_after.setEnabled(False)
         self.left.set_rows([], 'old')
         self.right.set_rows([], 'new')
         self.old_title.setText('Before · ' + (source[:12] if source else 'empty tree'))
@@ -214,6 +224,8 @@ class DiffViewer(QWidget):
         if index < 0 or index >= len(self.changes):
             return
         change = self.changes[index]
+        self.open_before.setEnabled(bool(self.source and change.old_blob.strip('0') and change.old_mode != '160000'))
+        self.open_after.setEnabled(bool(change.new_blob.strip('0') and change.new_mode != '160000'))
         self.old_title.setText(f'Before · {self.source[:12] if self.source else "empty tree"}\n{change.old_path}')
         self.new_title.setText(f'After · {self.target[:12]}\n{change.new_path}')
         self.left.set_rows([], 'old')
@@ -252,3 +264,23 @@ class DiffViewer(QWidget):
                 editor.verticalScrollBar().setValue(max(0, first_change-3))
         except (RuntimeError, OSError, ValueError, TimeoutExpired) as exc:
             self.status.setText(f'Cannot preview file: {exc}')
+
+    def open_historical_file(self, before):
+        from commit_files import TreeFile
+        from vscode_open import SnapshotOpenDialog
+        index = self.files.currentRow()
+        if index < 0 or index >= len(self.changes):
+            return
+        change = self.changes[index]
+        oid = self.source if before else self.target
+        path, blob, mode = ((change.old_path, change.old_blob, change.old_mode) if before else
+                            (change.new_path, change.new_blob, change.new_mode))
+        if not oid or not blob.strip('0') or mode == '160000':
+            return
+        dialog = SnapshotOpenDialog(self.repo.path, oid, self, TreeFile(path, blob, mode, 'blob'))
+        self.exports.append(dialog)
+        dialog.destroyed.connect(lambda: self.exports.remove(dialog) if dialog in self.exports else None)
+        owner = self.window()
+        if isinstance(owner, QDialog):
+            owner.finished.connect(dialog.close)
+        dialog.show()

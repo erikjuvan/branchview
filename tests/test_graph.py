@@ -105,7 +105,8 @@ class GitGraphTest(unittest.TestCase):
             self.assertNotIn(fork, window.nodes)
             window.rearrange_visible()
             self.assertNotIn(fork, window.nodes)
-            self.assertEqual({act.text() for act in window.node_menu(a).actions()}, {'Hide node'})
+            self.assertEqual({act.text() for act in window.node_menu(a).actions()},
+                             {'Hide node', 'Browse files at this commit…', 'Open commit in VS Code…'})
             self.assertEqual(window.view.dragMode(), window.view.DragMode.RubberBandDrag)
             window.show_hidden_nodes()
             self.assertIn(fork, window.nodes)
