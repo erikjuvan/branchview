@@ -100,7 +100,7 @@ class CommitBrowser(QDialog):
         if entry is None:
             self.preview.clear()
             return
-        self.preview.setPlainText('Reading '+entry.path+'…')
+        self.preview.clear()
         self.preview_task.start(lambda cancelled, _: preview_file(self.repo_path, entry, cancelled))
 
     def open_vscode(self, entry=None):
