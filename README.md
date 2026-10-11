@@ -167,7 +167,14 @@ larger initial budget or `--max-commits 0` for all history.
   Line-ending styles (CRLF/LF/CR) are normalized for line matching; conversions
   are reported above the diff. Missing final newlines remain highlighted changes.
 - Space or Fit: fit entire graph. Click a commit: metadata and full message.
-- The sidebar loads extended details in the background: author and committer
+- The detail sidebar uses **Commit**, **References**, **Diff**, and **File tree**
+  tabs. Author and committer information and the full message are in **Commit**; branches, tags,
+  parents, children, integration merges, and worktrees in **References**;
+  change statistics and file diff links in **Diff**. **File tree** loads a
+  searchable tracked-file tree and historical previews when opened. The selected
+  tab stays active when switching commits. Multiple selections show commit,
+  relationship, and comparison summaries in the corresponding tabs.
+  Extended details load in the background and include author and committer
   identities/dates, references pointing here, all locally known containing branches
   and tags, direct children, parent subjects and merge roles, integration merges
   on current branches' first-parent paths, and changed files/statistics against

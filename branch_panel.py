@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QLineEdit, QListWidg
 from PySide6.QtGui import QColor, QPen
 from branch_colors import remote_name, remote_color
 from git_reader import opened_worktree
+from theme import TAB_STYLESHEET
 
 
 BADGE_ROLE = Qt.ItemDataRole.UserRole+3
@@ -81,11 +82,7 @@ class BranchPanel(QWidget):
         self.heading = QLabel('All refs (0)')
         box.addWidget(self.heading)
         self.tabs = QTabBar()
-        self.tabs.setStyleSheet('QTabBar::tab { background: #2d2d30; color: #cccccc; '
-                               'border: 1px solid #3c3c3c; padding: 4px 10px; } '
-                               'QTabBar::tab:selected { background: #094771; color: #ffffff; '
-                               'border-bottom: 2px solid #75baff; } '
-                               'QTabBar::tab:hover { background: #37373d; }')
+        self.tabs.setStyleSheet(TAB_STYLESHEET)
         for title in ('All refs', 'Branches', 'Tags', 'Worktrees'):
             self.tabs.addTab(title)
         self.tabs.setExpanding(True)

@@ -296,7 +296,6 @@ class Window(QMainWindow):
         self.commit_browsers = []
         self.snapshot_dialogs = []
         self.details = CommitSidebar()
-        self.details.setReadOnly(True)
         self.details.anchorClicked.connect(self.open_detail_link)
         self.inspected_selection = set()
         self.details.setPlainText('Open a Git repository.\n\nCommit details and comparison summaries appear here.\n\nWheel: zoom\nLeft-drag background: select multiple\nMiddle-drag: pan\nDrag a node or its label: rearrange\nDouble-click a node: diff\nDouble-click a chain label: expand')

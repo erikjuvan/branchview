@@ -5,10 +5,12 @@ from pathlib import Path
 from threading import Event
 from urllib.parse import urlencode
 
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot
-from PySide6.QtWidgets import QTextBrowser
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot, QUrl
+from PySide6.QtWidgets import QTextBrowser, QWidget, QVBoxLayout, QTabBar, QStackedWidget
 
 from commit_info import read_commit_info, InspectionCancelled
+from commit_browser import CommitBrowser
+from theme import TAB_STYLESHEET
 from qt_jobs import emit_if_alive
 from git_reader import opened_worktree
 
@@ -61,21 +63,21 @@ def list_html(items, limit=80):
     return body
 
 
-def render_basic(commit, branches, repo=None):
+def render_basic(commit, branches, repo=None, category=None):
     subject = commit.message.split('\n')[0]
     body = f'<h2>{escape(subject)}</h2>'
     if repo is not None:
         opened = opened_worktree(repo.path, repo.worktrees)
         body += checkout_section([(wt, wt == opened) for wt in repo.worktrees if wt.active and wt.head == commit.oid])
     body += (f'<p>Commit: {escape(commit.oid)}<br>'
-            f'Branches pointing here: {escape(", ".join(branches)) or "None"}<br>'
-            f'Author: {escape(commit.author)}<br>Date: {escape(commit.date)}</p>'
-            + section('Parents', list_html(commit_link(p) for p in commit.parents) if commit.parents else 'Root commit')
-            + section('Message', f'<pre style="white-space: pre-wrap">{escape(commit.message)}</pre>'))
-    return body
+             f'Author: {escape(commit.author)}<br>Date: {escape(commit.date)}</p>'
+             + section('Message', f'<pre style="white-space: pre-wrap">{escape(commit.message)}</pre>'))
+    refs = (section('Branches pointing here', escape(', '.join(branches)) or 'None')
+            + section('Parents', list_html(commit_link(p) for p in commit.parents) if commit.parents else 'Root commit'))
+    return refs if category == 'References' else body if category == 'Commit' else body + refs
 
 
-def render_info(info):
+def render_info(info, category=None):
     c = info.commit
     subject = c.message.split('\n')[0]
     kind = 'Merge commit' if len(c.parents) > 1 else 'Root commit' if not c.parents else 'Ordinary commit'
@@ -87,7 +89,9 @@ def render_info(info):
             f'Authored: {escape(c.date)}<br>'
             f'Committer: {escape(info.committer)} &lt;{escape(info.committer_email)}&gt;<br>'
             f'Committed: {escape(info.committer_date)}</p>')
-    body += section('References pointing here', list_html(escape(ref) for ref in info.tip_refs))
+    commit_body = body + section('Message', f'<pre style="white-space: pre-wrap">{escape(c.message)}</pre>')
+    commit_body += section('Tree', escape(info.tree))
+    body = section('References pointing here', list_html(escape(ref) for ref in info.tip_refs))
     named_tip = any(not ref.startswith('tag: ') for ref in info.tip_refs)
     if named_tip and info.included_in:
         entries = []
@@ -132,19 +136,23 @@ def render_info(info):
     body += section('How it landed', list_html(entries))
     body += '<p>Branch names are current references. Git does not record the original branch name; '
     body += 'containment alone does not prove a merge. Squash merges and cherry-picks create different commit IDs.</p>'
+    references_body = body
     label = 'Changes against first parent' if c.parents else 'Changes against empty tree'
-    body += section(label, escape(info.statistics)+f'<br><a href="diff:{c.oid}">Open side-by-side diff</a>')
+    body = section(label, escape(info.statistics)+f'<br><a href="diff:{c.oid}">Open side-by-side diff</a>')
     body += '<p>'+list_html(f'{escape(change.status)} &nbsp; <a href="diff:{c.oid}?{escape(urlencode({"file": change.new_path}), quote=True)}">'
                             f'{escape(change.old_path+" → "+change.new_path if change.old_path != change.new_path else change.new_path)}</a>'
                             for change in info.files)+'</p>'
-    body += section('Message', f'<pre style="white-space: pre-wrap">{escape(c.message)}</pre>')
-    body += section('Tree', escape(info.tree))
-    if info.warnings:
-        body += section('History limitations', list_html(escape(warning) for warning in info.warnings))
-    return body
+    warnings = section('History limitations', list_html(escape(warning) for warning in info.warnings)) if info.warnings else ''
+    pages = {'Commit': commit_body, 'References': references_body, 'Diff': body}
+    if category is not None:
+        heading = f'<h2>{escape(subject)}</h2><p>Commit: {escape(c.oid)}</p>' if category != 'Commit' else ''
+        if category == 'References':
+            heading += checkout_section(checkouts)
+        return heading + pages[category] + warnings
+    return ''.join(pages.values()) + warnings
 
 
-def render_selection(repo, selected, cache):
+def render_selection(repo, selected, cache, category=None):
     oids = [oid for oid in reversed(repo.commits) if oid in selected]
     authors = sorted({repo.commits[oid].author for oid in oids})
     branches = sorted({name for oid in oids for name in repo.branches.get(oid, [])})
@@ -152,12 +160,14 @@ def render_selection(repo, selected, cache):
     branch_label = 'branch reference' if len(branches) == 1 else 'branch references'
     body = (f'<h2>{len(oids)} commits selected</h2>'
             f'<p>{len(authors)} {author_label} · {len(branches)} {branch_label} pointing at selection</p>')
+    heading = body
     if len(oids) == 2:
         source, target = oids
         body += f'<p><a href="compare:{source}/{target}">Compare {source[:12]} → {target[:12]}</a> (D)</p>'
     else:
         body += '<p>Select exactly two commits to compare them with D.</p>'
-    body += section('Branches pointing at selection', list_html(escape(name) for name in branches))
+    diff_body = body
+    body = section('Branches pointing at selection', list_html(escape(name) for name in branches))
     if oids and all(oid in cache for oid in oids):
         shared = set(cache[oids[0]].branches)
         for oid in oids[1:]:
@@ -202,8 +212,9 @@ def render_selection(repo, selected, cache):
         if relationships[oid]:
             card += '<br>'+escape(' · '.join(relationships[oid]))
         cards.append(card+'</p>')
-    body += section('Selected commits', list_html(cards))
-    return body
+    commits_body = heading + section('Selected commits', list_html(cards))
+    pages = {'Commit': commits_body, 'References': heading + body, 'Diff': diff_body}
+    return pages[category] if category is not None else diff_body + body + section('Selected commits', list_html(cards))
 
 
 class JobSignals(QObject):
@@ -228,13 +239,33 @@ class InfoJob(QRunnable):
         emit_if_alive(self.signals, 'finished', self.key, info, error)
 
 
-class CommitSidebar(QTextBrowser):
+class CommitSidebar(QWidget):
+    anchorClicked = Signal(QUrl)
+
     def __init__(self):
         super().__init__()
-        self.setOpenLinks(False)
-        self.setOpenExternalLinks(False)
-        self.document().setDefaultStyleSheet('a { color: #80c7ff; } h2 { color: #ffd166; font-size: 14pt; } '
-                                            'h3 { color: #80ead9; margin-top: 16px; } pre { font-family: monospace; }')
+        box = QVBoxLayout(self)
+        box.setContentsMargins(8, 6, 8, 6)
+        box.setSpacing(4)
+        self.tabs = QTabBar()
+        self.tabs.setStyleSheet(TAB_STYLESHEET)
+        self.tabs.setExpanding(True)
+        self.pages = QStackedWidget()
+        self.browsers = {}
+        for title in ('Commit', 'References', 'Diff', 'File tree'):
+            self.tabs.addTab(title)
+            browser = QTextBrowser()
+            browser.setOpenLinks(False)
+            browser.setOpenExternalLinks(False)
+            browser.document().setDefaultStyleSheet('a { color: #80c7ff; } h2 { color: #ffd166; font-size: 14pt; } '
+                                                   'h3 { color: #80ead9; margin-top: 16px; } pre { font-family: monospace; }')
+            browser.anchorClicked.connect(self.anchorClicked.emit)
+            self.browsers[title] = browser
+            self.pages.addWidget(browser)
+        box.addWidget(self.tabs)
+        box.addWidget(self.pages, 1)
+        self.tabs.currentChanged.connect(self.change_tab)
+        self.file_browser = None
         self.repo = None
         self.cache = OrderedDict()
         self.jobs = {}
@@ -242,8 +273,61 @@ class CommitSidebar(QTextBrowser):
         self.generation = 0
         self.request_id = 0
         self.active_key = None
-        self.basic = ''
         self.context_note = ''
+
+    def change_tab(self, index):
+        browser = self.browsers[self.tabs.tabText(index)]
+        scroll = browser.verticalScrollBar().value()
+        self.pages.setCurrentIndex(index)
+        self.ensure_file_browser()
+        browser.verticalScrollBar().setValue(scroll)
+
+    def clear_file_browser(self):
+        if self.file_browser is not None:
+            browser, self.file_browser = self.file_browser, None
+            self.pages.removeWidget(browser)
+            browser.close()
+            browser.deleteLater()
+            self.pages.insertWidget(3, self.browsers['File tree'])
+            self.pages.setCurrentIndex(self.tabs.currentIndex())
+
+    def ensure_file_browser(self):
+        if self.tabs.currentIndex() != 3 or self.active_oid is None or self.file_browser is not None:
+            return
+        self.file_browser = CommitBrowser(self.repo.path, self.active_oid, self, embedded=True)
+        self.pages.removeWidget(self.browsers['File tree'])
+        self.pages.insertWidget(3, self.file_browser)
+        self.pages.setCurrentIndex(3)
+
+    def setPlainText(self, text):
+        self.cancel_pending()
+        for browser in self.browsers.values():
+            browser.setPlainText(text)
+
+    def toPlainText(self):
+        if self.file_browser is not None and self.tabs.currentIndex() == 3:
+            return self.file_browser.preview.toPlainText()
+        return self.pages.currentWidget().toPlainText()
+
+    def render_details(self, info=None, error=None, preserve_scroll=False):
+        for title in ('Commit', 'References', 'Diff'):
+            browser = self.browsers[title]
+            scroll = browser.verticalScrollBar().value() if preserve_scroll else 0
+            if info is not None:
+                body = render_info(info, title)
+            else:
+                c = self.repo.commits.get(self.active_oid)
+                body = render_basic(c, self.repo.branches.get(self.active_oid, []), self.repo, title) if c and title != 'Diff' else f'<p>Commit: {escape(self.active_oid)}</p>'
+                body += (f'<p>Extended details unavailable: {escape(error)}</p>' if error else
+                         '<p>Loading relationships and change summary…</p>')
+            browser.setHtml(self.context_note + body)
+            browser.verticalScrollBar().setValue(scroll)
+        self.browsers['File tree'].setPlainText('Open this tab to browse tracked files at this commit.')
+        self.ensure_file_browser()
+
+    def closeEvent(self, event):
+        self.cancel_pending()
+        super().closeEvent(event)
 
     def reset_repository(self, repo):
         self.cancel_pending()
@@ -255,13 +339,16 @@ class CommitSidebar(QTextBrowser):
         for job in self.jobs.values():
             job.cancelled.set()
         self.active_oid = None
+        self.clear_file_browser()
 
     def show_commit(self, repo, oid):
         if repo is not self.repo:
             self.reset_repository(repo)
         if self.active_oid == oid and self.active_key in self.jobs:
             return
-        self.cancel_pending()
+        same_commit = self.active_oid == oid
+        if not same_commit:
+            self.cancel_pending()
         self.active_oid = oid
         self.request_id += 1
         key = (self.generation, oid, self.request_id)
@@ -273,11 +360,9 @@ class CommitSidebar(QTextBrowser):
                                  '<p>This commit is outside the loaded graph. Load more ancestors, choose All history, or include remote branches to place it in the graph.</p>')
         if oid in self.cache:
             self.cache.move_to_end(oid)
-            self.setHtml(self.context_note+render_info(self.cache[oid]))
+            self.render_details(self.cache[oid], preserve_scroll=same_commit)
             return
-        c = repo.commits.get(oid)
-        self.basic = render_basic(c, repo.branches.get(oid, []), repo) if c else f'<p>Commit: {escape(oid)}</p>'
-        self.setHtml(self.context_note+self.basic+'<p>Loading relationships and change summary…</p>')
+        self.render_details()
         job = InfoJob(key, repo, oid)
         job.signals.finished.connect(self.finished)
         self.jobs[key] = job
@@ -287,7 +372,9 @@ class CommitSidebar(QTextBrowser):
         if repo is not self.repo:
             self.reset_repository(repo)
         self.cancel_pending()
-        self.setHtml(render_selection(repo, set(oids), self.cache))
+        for title in ('Commit', 'References', 'Diff'):
+            self.browsers[title].setHtml(render_selection(repo, set(oids), self.cache, title))
+        self.browsers['File tree'].setPlainText('Select a single commit to browse its file tree.')
 
     @Slot(object, object, object)
     def finished(self, key, info, error):
@@ -300,6 +387,4 @@ class CommitSidebar(QTextBrowser):
                 self.cache.popitem(last=False)
         if key[1] != self.active_oid:
             return
-        scroll = self.verticalScrollBar().value()
-        self.setHtml(self.context_note+(render_info(info) if info else self.basic+f'<p>Extended details unavailable: {escape(error or "Unknown error")}</p>'))
-        self.verticalScrollBar().setValue(scroll)
+        self.render_details(info, None if info else error or 'Unknown error', preserve_scroll=True)

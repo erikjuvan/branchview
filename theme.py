@@ -2,6 +2,13 @@
 from PySide6.QtGui import QColor, QPalette
 
 
+TAB_STYLESHEET = ('QTabBar::tab { background: #2d2d30; color: #cccccc; '
+                  'border: 1px solid #3c3c3c; padding: 4px 10px; } '
+                  'QTabBar::tab:selected { background: #094771; color: #ffffff; '
+                  'border-bottom: 2px solid #75baff; } '
+                  'QTabBar::tab:hover { background: #37373d; }')
+
+
 DARK_STYLESHEET = '''
     QWidget { background: #252526; color: #cccccc; }
     QLineEdit, QTextEdit, QPlainTextEdit, QAbstractItemView, QComboBox {

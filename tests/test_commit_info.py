@@ -5,7 +5,7 @@ from pathlib import Path
 from threading import Event, get_ident
 from unittest.mock import patch, MagicMock
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QUrl, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog
 
@@ -139,6 +139,7 @@ class CommitInfoTest(unittest.TestCase):
             self.assertNotEqual(threads[0], gui_thread)
             gate.set()
             self.wait_until(lambda: self.feature in sidebar.cache)
+            sidebar.tabs.setCurrentIndex(1)
             self.assertIn('Contained in branches', sidebar.toPlainText())
             sidebar.show_commit(self.repo, self.feature)
             self.assertEqual(reader.call_count, 1)
@@ -204,6 +205,74 @@ class CommitInfoTest(unittest.TestCase):
             self.assertEqual(sidebar.active_oid, self.tip)
             self.assertIn('After integration', sidebar.toPlainText())
             self.assertNotIn(self.feature, sidebar.cache)
+
+    def test_detail_tabs_group_content_and_forward_links(self):
+        sidebar = CommitSidebar()
+        self.addCleanup(sidebar.close)
+        sidebar.reset_repository(self.repo)
+        sidebar.cache[self.feature] = read_commit_info(self.repo, self.feature)
+        sidebar.cache[self.tip] = read_commit_info(self.repo, self.tip)
+        sidebar.show_commit(self.repo, self.feature)
+        self.assertEqual([sidebar.tabs.tabText(i) for i in range(4)],
+                         ['Commit', 'References', 'Diff', 'File tree'])
+        self.assertIn('alice@example.invalid', sidebar.toPlainText())
+        self.assertIn('Message', sidebar.toPlainText())
+        self.assertNotIn('Contained in branches', sidebar.toPlainText())
+        sidebar.tabs.setCurrentIndex(1)
+        self.assertIn('Contained in branches', sidebar.toPlainText())
+        self.assertIn('Parents / merge roles', sidebar.toPlainText())
+        self.assertIn('How it landed', sidebar.toPlainText())
+        self.assertNotIn('Changes against', sidebar.toPlainText())
+        links = []
+        sidebar.anchorClicked.connect(links.append)
+        link = QUrl('commit:' + self.base)
+        sidebar.browsers['References'].anchorClicked.emit(link)
+        self.assertEqual(links, [link])
+        sidebar.tabs.setCurrentIndex(2)
+        self.assertIn('feature.txt', sidebar.toPlainText())
+        self.assertNotIn('Contained in branches', sidebar.toPlainText())
+        sidebar.show_commit(self.repo, self.tip)
+        self.assertEqual(sidebar.tabs.currentIndex(), 2)
+        self.assertIn('After integration', sidebar.toPlainText())
+        sidebar.show_selection(self.repo, {self.feature, self.tip})
+        self.assertIn('Compare', sidebar.toPlainText())
+        sidebar.tabs.setCurrentIndex(0)
+        self.assertIn('Selected commits', sidebar.toPlainText())
+        self.assertNotIn('Compare', sidebar.toPlainText())
+
+    def test_file_tree_is_lazy_pinned_and_cleared_on_selection_change(self):
+        sidebar = CommitSidebar()
+        self.addCleanup(sidebar.close)
+        sidebar.reset_repository(self.repo)
+        sidebar.cache[self.feature] = read_commit_info(self.repo, self.feature)
+        sidebar.cache[self.root] = read_commit_info(self.repo, self.root)
+        sidebar.show_commit(self.repo, self.feature)
+        sidebar.show()
+        self.app.processEvents()
+        self.assertIsNone(sidebar.file_browser)
+        (self.folder/'feature.txt').write_text('Working copy changed\n')
+        sidebar.tabs.setCurrentIndex(3)
+        browser = sidebar.file_browser
+        self.assertFalse(browser.isWindow())
+        QTest.keyClick(browser, Qt.Key.Key_Escape)
+        self.assertTrue(browser.isVisible())
+        self.wait_until(lambda: browser.tree_task.active is None)
+        item = next(browser.tree.topLevelItem(i) for i in range(browser.tree.topLevelItemCount())
+                    if browser.tree.topLevelItem(i).text(0) == 'feature.txt')
+        browser.tree.setCurrentItem(item)
+        self.wait_until(lambda: browser.preview_task.active is None)
+        self.assertEqual(browser.preview.toPlainText(), 'Feature\n')
+        sidebar.show_commit(self.repo, self.feature)
+        self.assertIs(sidebar.file_browser, browser)
+        sidebar.show_commit(self.repo, self.root)
+        self.assertEqual(sidebar.tabs.currentIndex(), 3)
+        self.assertEqual(sidebar.file_browser.commit, self.root)
+        self.assertIsNot(sidebar.file_browser, browser)
+        sidebar.show_selection(self.repo, {self.feature, self.tip})
+        self.assertIsNone(sidebar.file_browser)
+        self.assertIn('Select a single commit', sidebar.toPlainText())
+        sidebar.setPlainText('Select a commit')
+        self.assertEqual(sidebar.toPlainText(), 'Select a commit')
 
     def test_shallow_boundary_retains_actual_parent_and_metadata(self):
         with tempfile.TemporaryDirectory() as target:

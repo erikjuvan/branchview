@@ -59,7 +59,8 @@ class ShortcutPanelTest(unittest.TestCase):
         bounds, entries = panel.geometry(), list(panel.entries)
         window.details.setPlainText('Long commit details\n'*2000)
         self.app.processEvents()
-        window.details.verticalScrollBar().setValue(window.details.verticalScrollBar().maximum())
+        browser = window.details.browsers['Commit']
+        browser.verticalScrollBar().setValue(browser.verticalScrollBar().maximum())
         self.app.processEvents()
         self.assertEqual(panel.geometry(), bounds)
         self.assertEqual(panel.entries, entries)

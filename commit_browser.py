@@ -3,19 +3,23 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QLabel, QLineEdit, QSplitter,
-                               QTreeWidget, QTreeWidgetItem, QPlainTextEdit, QHBoxLayout, QPushButton)
+                               QTreeWidget, QTreeWidgetItem, QPlainTextEdit, QHBoxLayout, QPushButton, QWidget)
 from background_task import BackgroundTask
 from commit_files import read_tree, preview_file
 from vscode_open import SnapshotOpenDialog
 
 
 class CommitBrowser(QDialog):
-    def __init__(self, repo_path, commit, parent=None):
+    def __init__(self, repo_path, commit, parent=None, *, embedded=False):
         super().__init__(parent)
+        self.embedded = embedded
         self.repo_path, self.commit = repo_path, commit
         self.selected_file = None
         self.exports = []
-        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        if embedded:
+            self.setWindowFlags(Qt.WindowType.Widget)
+        else:
+            self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setWindowTitle(f'{Path(repo_path).name} @ {commit[:12]} — Files')
         self.resize(1050, 720)
         box = QVBoxLayout(self)
@@ -32,11 +36,13 @@ class CommitBrowser(QDialog):
         self.open_file.clicked.connect(lambda: self.open_vscode(self.selected_file))
         row.addWidget(self.open_file)
         row.addStretch()
+        if embedded:
+            row.setDirection(QHBoxLayout.Direction.TopToBottom)
         box.addLayout(row)
         self.filter = QLineEdit()
         self.filter.setPlaceholderText('Filter files by path…')
         box.addWidget(self.filter)
-        splitter = QSplitter()
+        splitter = QSplitter(Qt.Orientation.Vertical if embedded else Qt.Orientation.Horizontal)
         self.tree = QTreeWidget()
         self.tree.setHeaderHidden(True)
         splitter.addWidget(self.tree)
@@ -48,6 +54,7 @@ class CommitBrowser(QDialog):
         box.addWidget(splitter, 1)
         self.status = QLabel('Reading commit tree…')
         self.status.setTextFormat(Qt.TextFormat.PlainText)
+        self.status.setWordWrap(embedded)
         box.addWidget(self.status)
         self.tree_task = BackgroundTask(self)
         self.preview_task = BackgroundTask(self)
@@ -58,6 +65,13 @@ class CommitBrowser(QDialog):
         self.filter.textChanged.connect(self.apply_filter)
         self.tree.currentItemChanged.connect(self.select_file)
         self.tree_task.start(lambda cancelled, _: read_tree(repo_path, commit, cancelled))
+
+    def keyPressEvent(self, event):
+        if self.embedded:
+            # Embedded pages must not accept/reject like a standalone dialog.
+            QWidget.keyPressEvent(self, event)
+        else:
+            super().keyPressEvent(event)
 
     def populate(self, entries):
         self.tree.clear()
