@@ -19,7 +19,7 @@ class BranchPanelTest(unittest.TestCase):
             git(path, '-c', 'user.name=Tester', '-c', 'user.email=test@example.invalid', 'commit', '--allow-empty', '-m', 'Tip')
             tip = git(path, 'rev-parse', 'HEAD')
             git(path, 'update-ref', 'refs/remotes/origin/main', tip)
-            window = Window(str(path))
+            window = Window(str(path), presentation='terminal')
             window.show()
             try:
                 wait_for_load(window)

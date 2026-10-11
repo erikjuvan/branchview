@@ -12,6 +12,39 @@ def branch_layout(graph: Graph, cancelled=None) -> dict[str, tuple[float, float]
         positions[oid] = ((index % columns)*400, (index // columns)*150)
     return positions
 
+def regular_layout(graph: Graph, cancelled=None) -> dict[str, tuple[float, float]]:
+    """One row per commit, with stable live ancestry lanes and no contraction."""
+    parents = defaultdict(list)
+    for edge in graph.edges:
+        parents[edge.child].append(edge.parent)
+    lanes = []
+    positions = {}
+    for row, oid in enumerate(graph.order):
+        check_cancelled(cancelled)
+        if oid in lanes:
+            lane = lanes.index(oid)
+        elif None in lanes:
+            lane = lanes.index(None)
+        else:
+            lane = len(lanes)
+            lanes.append(None)
+        positions[oid] = (lane*28, row*40)
+        lanes[lane] = None
+        for index, parent in enumerate(parents[oid]):
+            if parent in lanes:
+                continue
+            if index == 0:
+                lanes[lane] = parent
+            elif None in lanes:
+                lanes[lanes.index(None)] = parent
+            else:
+                lanes.append(parent)
+    return positions
+
+def arrange_graph(repo, graph, cancelled=None):
+    arrange = branch_layout if repo.branches_only else regular_layout if repo.regular_history else layout
+    return arrange(graph, cancelled=cancelled)
+
 def layout(graph: Graph, cancelled=None) -> dict[str, tuple[float, float]]:
     parents = defaultdict(list)
     pending = {oid: 0 for oid in graph.nodes}

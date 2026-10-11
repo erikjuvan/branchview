@@ -62,7 +62,7 @@ class GitGraphTest(unittest.TestCase):
             from PySide6.QtWidgets import QApplication
             from viewer import Window
             app=QApplication.instance() or QApplication([])
-            window=Window(path)
+            window=Window(path, presentation='terminal')
             wait_for_load(window)
             window.show(); app.processEvents()
             self.assertEqual(len(window.repo.commits),len(repo.commits))

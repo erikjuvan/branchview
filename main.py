@@ -4,7 +4,9 @@ from PySide6.QtWidgets import QApplication
 from workspace import WorkspaceWindow
 
 def main():
-    parser = argparse.ArgumentParser(description='Read-only terminal-branch Git graph')
+    parser = argparse.ArgumentParser(description='Read-only Git history and branch graphs')
+    parser.add_argument('--presentation', choices=['regular', 'terminal', 'all'], default='regular',
+                        help='History layout (default: regular; one commit per row)')
     parser.add_argument('repository', nargs='?', help='Repository or folder containing repositories')
     parser.add_argument('--recursive', action='store_true', help='Scan all descendant folders for repositories')
     parser.add_argument('--branches-only', action='store_true',
@@ -17,7 +19,7 @@ def main():
         parser.error('--max-commits must be non-negative')
     app = QApplication(sys.argv[:1])
     window = WorkspaceWindow(args.repository, recursive=args.recursive, branches_only=args.branches_only, history_limit=args.max_commits or None,
-                    all_branch_tips=args.all_branch_tips)
+                    all_branch_tips=args.all_branch_tips, presentation=args.presentation)
     window.show()
     return app.exec()
 

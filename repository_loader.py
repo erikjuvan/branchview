@@ -4,7 +4,7 @@ from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot
 from git_reader import read_repository
 from git_process import GitCancelled
 from graph import build_graph
-from layout import layout, branch_layout
+from layout import arrange_graph
 from qt_jobs import emit_if_alive
 
 
@@ -33,8 +33,7 @@ class LoadJob(QRunnable):
                 raise GitCancelled()
             emit_if_alive(self.signals, 'progress', self.key, 'Preparing graph and layout')
             graph = build_graph(repo, cancelled=self.cancelled)
-            positions = (branch_layout(graph, cancelled=self.cancelled) if repo.branches_only else
-                         layout(graph, cancelled=self.cancelled))
+            positions = arrange_graph(repo, graph, cancelled=self.cancelled)
         except GitCancelled:
             pass
         except Exception as exc:

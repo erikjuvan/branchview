@@ -67,7 +67,7 @@ class BranchesOnlyTest(unittest.TestCase):
             self.assertEqual(set(remote.commits), {root, side, tip, intermediate})
             self.assertNotIn('origin/HEAD', [name for names in remote.branches.values() for name in names])
 
-            window = Window(path, branches_only=True)
+            window = Window(path, branches_only=True, presentation='terminal')
             wait_for_load(window)
             self.addCleanup(window.close)
             self.assertTrue(window.branches_only.isChecked())

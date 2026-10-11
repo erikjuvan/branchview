@@ -41,6 +41,18 @@ larger initial budget or `--max-commits 0` for all history.
 
 ## Controls
 
+- **View** selects three history presentations. **Regular history** is the default:
+  newest commits first, one commit per row with compact connecting lanes and
+  inline branch labels. Committer dates order independent histories, with parents
+  kept below children even when clocks disagree. Rows are equally spaced, not
+  proportional to elapsed time. Every loaded commit is shown without contraction.
+  **Terminal branches on top** retains the compact ancestry layout; **All branches
+  on top** extends it with every named tip at the top. **Branches only** remains
+  a separate option for a no-history tip grid. Regular history opens at the most
+  recent rows; T returns there and Space fits everything. Regular rows are fixed;
+  manual node arrangements remain available in the other presentations.
+  CLI: `--presentation regular|terminal|all`; `--all-branch-tips` still selects all.
+
 - The right sidebar lists all loaded named branches, including remote branches
   when **Include remote branches** is enabled. Filter by name, then click a branch
   (or select it and press Enter) to reveal its tip, select it and zoom to a readable
@@ -183,7 +195,12 @@ larger initial budget or `--max-commits 0` for all history.
 
 ## Graph meaning
 
-In the automatic layout, all terminal tip commits occupy the top row. Manual
+Regular history shows every loaded commit on a separate row. Independent
+histories are ordered by commit date while parent commits remain below children;
+the lane lines express ancestry, and row spacing does not express elapsed time.
+The initial view fits the newest rows. Branch refs stay beside their actual commit.
+
+In the terminal-branches layout, all terminal tip commits occupy the top row. Manual
 dragging allows arbitrary positions. A terminal tip is not a strict
 ancestor of another selected branch tip. Multiple branch names sharing a tip
 are grouped. Branch labels whose tips are ancestors of another tip are hidden

@@ -44,7 +44,7 @@ class ShortcutPanel(QFrame):
         if window.display_nodes:
             add(window.fit_shortcut, 'Fit the entire graph')
             add(window.top_shortcut, 'Jump to and fit top commits')
-            add(window.rearrange_shortcut, 'Rearrange visible nodes')
+            add(window.rearrange_shortcut, 'Reset history layout' if window.repo and window.repo.regular_history and not window.repo.branches_only else 'Rearrange visible nodes')
             if count == 1:
                 add(window.browse_shortcut, 'Browse files at selected commit')
                 add(window.vscode_shortcut, 'Open selected commit in VS Code')

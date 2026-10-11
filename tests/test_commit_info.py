@@ -147,7 +147,7 @@ class CommitInfoTest(unittest.TestCase):
             self.wait_until(lambda: self.feature in sidebar.cache)
             self.assertEqual(reader.call_count, 2)
 
-        window = Window(self.path, branches_only=True)
+        window = Window(self.path, branches_only=True, presentation='terminal')
         wait_for_load(window)
         self.addCleanup(window.close)
         tips = set(window.repo.commits)

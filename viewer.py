@@ -13,7 +13,7 @@ from commit_sidebar import CommitSidebar
 from search import SearchDialog
 from repository_loader import RepositoryLoader
 from graph import build_graph, hide_nodes
-from layout import layout, branch_layout
+from layout import layout, branch_layout, arrange_graph
 from shortcut_panel import ShortcutPanel
 from commit_browser import CommitBrowser
 from vscode_open import SnapshotOpenDialog
@@ -82,6 +82,9 @@ class Node(QGraphicsEllipseItem):
         self.setPen(QPen(QColor('#d5dce6'), 1))
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
+        if window.repo and window.repo.regular_history and not window.repo.branches_only:
+            self.setRect(-5,-5,10,10)
+            self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges)
         self.setCursor(Qt.CursorShape.ArrowCursor)
         self.setZValue(2)
@@ -138,6 +141,7 @@ class NodeLabel(QGraphicsTextItem):
         self.base_color = QColor('#e1e5eb')
         self.worktree_badge = False
         self.remote_branch = False
+        self.ref_badge = False
         self.included_tip = False
         self.setCursor(Qt.CursorShape.ArrowCursor)
     def set_included_tip(self, included):
@@ -148,10 +152,10 @@ class NodeLabel(QGraphicsTextItem):
         rect = super().boundingRect()
         return rect.adjusted(0, 0, 20, 0) if getattr(self, 'included_tip', False) else rect
     def paint(self, painter, option, widget=None):
-        if self.node.isSelected():
+        if self.node.isSelected() or self.ref_badge:
             painter.save()
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor('#59471f'))
+            painter.setPen(QPen(self.defaultTextColor(), 1) if self.ref_badge else QPen(Qt.PenStyle.NoPen))
+            painter.setBrush(QColor('#59471f' if self.node.isSelected() else '#35383e'))
             painter.drawRoundedRect(self.boundingRect(), 4, 4)
             painter.restore()
         super().paint(painter, option, widget)
@@ -194,6 +198,9 @@ class NodeLabel(QGraphicsTextItem):
             event.ignore()
     def mouseMoveEvent(self, event):
         if event.buttons() & Qt.MouseButton.LeftButton:
+            if self.node.window.repo.regular_history and not self.node.window.repo.branches_only:
+                event.accept()
+                return
             delta = event.scenePos() - self.drag_origin
             for node, origin in self.drag_nodes.items():
                 node.setPos(origin + delta)
@@ -218,13 +225,13 @@ class ChainLabel(QGraphicsTextItem):
         event.accept()
 
 class Window(QMainWindow):
-    def __init__(self, path=None, branches_only=False, history_limit=500, all_branch_tips=False, open_callback=None):
+    def __init__(self, path=None, branches_only=False, history_limit=500, all_branch_tips=False, open_callback=None, presentation='regular'):
         super().__init__()
         self.open_callback = open_callback
         self.repo = None
         self.expanded = set()
         self.hidden_nodes = set()
-        self.positions_by_mode = {False: {}, True: {}, 'all_tips': {}}
+        self.positions_by_mode = {False: {}, True: {}, 'all_tips': {}, 'regular': {}}
         self.manual_positions = self.positions_by_mode[False]
         self.nodes = {}
         self.display_nodes = {}
@@ -316,7 +323,11 @@ class Window(QMainWindow):
                                ('Show hidden nodes', self.show_hidden_nodes)]:
             if name == 'Open…' and self.open_callback is not None:
                 continue
-            toolbar.addAction(name, callback)
+            action = toolbar.addAction(name, callback)
+            if name == 'Collapse all':
+                self.collapse_action = action
+            elif name == 'Rearrange visible nodes':
+                self.rearrange_action = action
         self.remote = QCheckBox('Include remote branches')
         self.remote.toggled.connect(self.refresh)
         self.branches_only = QCheckBox('Branches only')
@@ -340,11 +351,19 @@ class Window(QMainWindow):
         self.history_limit.currentIndexChanged.connect(self.refresh)
         self.load_toolbar.addWidget(self.history_limit)
         self.more_action = self.load_toolbar.addAction('Load more ancestors', self.load_more)
-        self.all_branch_tips = QCheckBox('All branch tips on top')
-        self.all_branch_tips.setChecked(all_branch_tips)
+        self.all_branch_tips = QCheckBox('All branch tips on top', self)
+        self.all_branch_tips.setChecked(all_branch_tips or presentation == 'all')
         self.all_branch_tips.setToolTip('History mode: show every named tip on top with its ancestry. An arrow marks tips already included in another loaded branch.')
-        self.all_branch_tips.toggled.connect(self.refresh)
-        self.load_toolbar.addWidget(self.all_branch_tips)
+        self.all_branch_tips.toggled.connect(self.legacy_all_tips_changed)
+        self.all_branch_tips.hide()
+        self.load_toolbar.addWidget(QLabel('View:'))
+        self.presentation = QComboBox()
+        for title, key in [('Regular history', 'regular'), ('Terminal branches on top', 'terminal'), ('All branches on top', 'all')]:
+            self.presentation.addItem(title, key)
+        self.presentation.setCurrentIndex(self.presentation.findData('all' if all_branch_tips else presentation))
+        self.presentation.setToolTip('Regular: one commit per row. Branch layouts: tips on top with compact ancestry.')
+        self.presentation.currentIndexChanged.connect(self.change_presentation)
+        self.load_toolbar.addWidget(self.presentation)
         self.load_toolbar.addSeparator()
         self.load_toolbar.addWidget(self.remote)
         self.load_toolbar.addWidget(self.branches_only)
@@ -352,6 +371,14 @@ class Window(QMainWindow):
         self.update_history_controls()
         if path:
             self.load(path)
+    def change_presentation(self, *_):
+        self.all_branch_tips.blockSignals(True)
+        self.all_branch_tips.setChecked(self.presentation.currentData() == 'all')
+        self.all_branch_tips.blockSignals(False)
+        self.refresh()
+        self.update_history_controls()
+    def legacy_all_tips_changed(self, checked):
+        self.presentation.setCurrentIndex(self.presentation.findData('all' if checked else 'terminal'))
     def open(self):
         if self.open_callback is not None:
             self.open_callback()
@@ -376,7 +403,9 @@ class Window(QMainWindow):
         self.statusBar().showMessage(f'Loading {path}…')
         self.update_history_controls()
         self.loader.start(path, remote=self.remote.isChecked(), branches_only=self.branches_only.isChecked(),
-                          commit_limit=self.history_limit.currentData(), all_branch_tips=self.all_branch_tips.isChecked())
+                          commit_limit=self.history_limit.currentData(),
+                          all_branch_tips=self.presentation.currentData() == 'all' and not self.branches_only.isChecked(),
+                          regular_history=self.presentation.currentData() == 'regular' and not self.branches_only.isChecked())
     def load_progress(self, phase):
         self.statusBar().showMessage(f'Loading {self.pending_path} · {phase}')
     def restore_load_options(self):
@@ -387,6 +416,10 @@ class Window(QMainWindow):
                 widget.setChecked(self.loaded_options.get(key, widget.isChecked()))
                 widget.blockSignals(False)
             limit = self.loaded_options.get('commit_limit', self.history_limit.currentData())
+            mode = getattr(self, 'loaded_presentation', None) or ('all' if self.loaded_options.get('all_branch_tips') else 'regular' if self.loaded_options.get('regular_history') else 'terminal')
+            self.presentation.blockSignals(True)
+            self.presentation.setCurrentIndex(self.presentation.findData(mode))
+            self.presentation.blockSignals(False)
             self.history_limit.blockSignals(True)
             self.history_limit.setCurrentIndex(self.history_limit.findData(limit))
             self.history_limit.blockSignals(False)
@@ -394,6 +427,10 @@ class Window(QMainWindow):
     def update_history_controls(self, *_):
         self.history_limit.setEnabled(not self.branches_only.isChecked())
         self.all_branch_tips.setEnabled(not self.branches_only.isChecked())
+        self.presentation.setEnabled(not self.branches_only.isChecked())
+        regular = self.presentation.currentData() == 'regular' and not self.branches_only.isChecked()
+        self.collapse_action.setEnabled(not regular)
+        self.rearrange_action.setText('Reset history layout' if regular else 'Rearrange visible nodes')
         self.more_action.setEnabled(bool(self.repo and self.repo.history_limited and not self.loading
                                         and not self.branches_only.isChecked()))
         self.shortcuts_panel.update_context(self)
@@ -445,13 +482,14 @@ class Window(QMainWindow):
         self.pending_path = None
         self.cancel_action.setEnabled(False)
         self.loaded_options = options
+        self.loaded_presentation = self.presentation.currentData()
         self.update_history_controls()
         self.prepared = (repo, graph, positions)
         if self.repo is None or self.repo.path != repo.path:
             for positions in self.positions_by_mode.values():
                 positions.clear()
             self.hidden_nodes.clear()
-        mode = True if repo.branches_only else 'all_tips' if repo.all_branch_tips else False
+        mode = True if repo.branches_only else 'regular' if repo.regular_history else 'all_tips' if repo.all_branch_tips else False
         self.manual_positions = self.positions_by_mode[mode]
         self.repo = repo
         if self.search_dialog is not None:
@@ -466,6 +504,8 @@ class Window(QMainWindow):
                        'History view: all named branch tips start on top. An arrow marks tips included in another branch.\n'
                        'Each top entry shows only its ancestry; shared commits can also appear below receiving branches.'
                        if repo.all_branch_tips else
+                       'Regular history: newest commits first, one row per commit. Parents remain below their children.'
+                       if repo.regular_history else
                        'History view: vertical position represents ancestry, not time.')
         self.render()
         if repo.branches:
@@ -476,7 +516,7 @@ class Window(QMainWindow):
             self.view.setTransform(transform)
             self.view.centerOn(center)
         else:
-            self.view.fit()
+            self.fit_top_commits() if repo.regular_history and not repo.branches_only else self.view.fit()
         self.update_history_controls()
     def refresh(self, *_):
         path = self.pending_path if self.loading else self.repo.path if self.repo else getattr(self, 'repository_path', None)
@@ -485,7 +525,7 @@ class Window(QMainWindow):
     def collapse(self):
         self.expanded.clear()
         self.render()
-        self.view.fit()
+        self.fit_top_commits() if self.repo and self.repo.regular_history and not self.repo.branches_only else self.view.fit()
     def hide_node(self, oid):
         self._hide_nodes({oid})
     def hide_selected_nodes(self):
@@ -606,12 +646,13 @@ class Window(QMainWindow):
         # Hidden tip removal can expose new topmost nodes.
         if not self.repo.branches_only and not self.repo.all_branch_tips:
             graph.tips = sorted(graph.nodes - {e.parent for e in graph.edges})
-        arrange = branch_layout if self.repo.branches_only else layout
-        self.manual_positions.update(arrange(graph))
+        self.manual_positions.update(arrange_graph(self.repo, graph))
         self.render()
-        self.view.fit()
+        self.fit_top_commits() if self.repo.regular_history and not self.repo.branches_only else self.view.fit()
     def fit_top_commits(self):
-        top_nodes = [node for node in self.display_nodes.values() if node.tip]
+        top_nodes = (sorted(self.display_nodes.values(), key=lambda node: node.y())[:12]
+                     if self.repo and self.repo.regular_history and not self.repo.branches_only else
+                     [node for node in self.display_nodes.values() if node.tip])
         if not top_nodes:
             # If every branch tip is hidden, use the exposed topmost commits.
             parents = {oid for oids in self.parent_edges.values() for oid in oids}
@@ -623,6 +664,9 @@ class Window(QMainWindow):
             bounds = bounds.united(node.sceneBoundingRect())
             bounds = bounds.united(node.mapRectToScene(node.childrenBoundingRect()))
         self.view.fit_bounds(bounds)
+        if self.repo and self.repo.regular_history and self.view.transform().m11() > 1.5:
+            self.view.scale(1.5/self.view.transform().m11(), 1.5/self.view.transform().m11())
+            self.view.centerOn(bounds.center())
     def jump_to_branch(self, name, oid):
         if not self.repo or name not in self.repo.branches.get(oid, []):
             return
@@ -664,7 +708,12 @@ class Window(QMainWindow):
             x1,y1,x2,y2 = child.x(),child.y(),parent.x(),parent.y()
             path = QPainterPath()
             path.moveTo(x1,y1)
-            path.cubicTo(x1,(y1+y2)/2,x2,(y1+y2)/2,x2,y2)
+            if self.repo.regular_history and not self.repo.branches_only:
+                bend = min(y1+20, (y1+y2)/2)
+                path.cubicTo(x1,bend,x2,bend,x2,min(y1+40,y2))
+                path.lineTo(x2,y2)
+            else:
+                path.cubicTo(x1,(y1+y2)/2,x2,(y1+y2)/2,x2,y2)
             item.setPath(path)
             if label is not None:
                 middle_x, middle_y = (x1+x2)/2, (y1+y2)/2
@@ -705,11 +754,15 @@ class Window(QMainWindow):
             positions = dict(automatic)
         else:
             graph = build_graph(self.repo, self.expanded)
-            arrange = branch_layout if self.repo.branches_only else layout
-            positions = arrange(graph)
+            positions = arrange_graph(self.repo, graph)
         graph = hide_nodes(graph, self.hidden_nodes)
+        regular = self.repo.regular_history and not self.repo.branches_only
+        if regular and self.hidden_nodes:
+            positions = arrange_graph(self.repo, graph)
         positions = {oid: xy for oid,xy in positions.items() if oid in graph.nodes}
-        positions.update({oid: xy for oid, xy in self.manual_positions.items() if oid in graph.nodes})
+        if not regular:
+            positions.update({oid: xy for oid, xy in self.manual_positions.items() if oid in graph.nodes})
+        text_x = max((x for x, y in positions.values()), default=0)+32
         shared_copies = {graph.commit_oid(entry) for entry in graph.included_tips}
         for display_id,(x,y) in positions.items():
             oid = graph.commit_oid(display_id)
@@ -721,13 +774,13 @@ class Window(QMainWindow):
             context = ('\nBranch tip shown above; this commit also appears in shared ancestry.' if display_id != oid and oid in shared_copies else
                        '\nTop-row named branch tip.' if display_id != oid else
                        '\nThis commit is also shown as a branch tip above.' if oid in shared_copies else '')
-            node.setToolTip(f'{oid}\n{commit.message}{context}\nDrag to move')
+            node.setToolTip(f'{oid}\n{commit.message}{context}'+('\nOne commit per history row' if regular else '\nDrag to move'))
             self.scene.addItem(node)
-            label = NodeLabel(oid[:8]+' '+commit.message.split('\n')[0][:25], node)
+            label = NodeLabel(oid[:8]+' '+commit.message.split('\n')[0][:140 if regular else 25], node)
             self.labels.append(label)
             label.setDefaultTextColor(QColor('#e1e5eb'))
             label.setPos(12,-14)
-            if self.repo.history_limited and any(p not in self.repo.commits for p in commit.parents):
+            if self.repo.history_limited and any(p not in self.repo.commits for p in commit.parents) and not regular:
                 boundary = NodeLabel('Earlier history not loaded', node)
                 boundary.base_color = QColor('#d8ab65')
                 boundary.setDefaultTextColor(boundary.base_color)
@@ -751,6 +804,7 @@ class Window(QMainWindow):
                     title.worktree_badge = bool(trees)
                     remote = remote_name(self.repo, name)
                     title.remote_branch = remote is not None
+                    title.ref_badge = regular
                     title.base_color = (QColor('#c792ea') if trees else remote_color(remote) if remote is not None else
                                         QColor('#d8ab65' if included else '#75baff'))
                     title.setDefaultTextColor(title.base_color)
@@ -767,21 +821,28 @@ class Window(QMainWindow):
                 if detached:
                     title = NodeLabel('Detached HEAD [WT]', node)
                     title.worktree_badge = True
+                    title.ref_badge = regular
                     title.base_color = QColor('#c792ea')
                     title.setDefaultTextColor(title.base_color)
                     title.setToolTip('\n'.join(wt.path for wt in detached))
                     titles.append(title)
                 y = -15-sum(title.boundingRect().height() for title in titles)
+                row_x = text_x-x
                 for title in titles:
-                    title.setPos(-10, y)
+                    title.setPos(row_x if regular else -10, -14 if regular else y)
+                    row_x += title.boundingRect().width()+8
                     y += title.boundingRect().height()
                     self.labels.append(title)
+                if regular:
+                    label.setPos(row_x, -14)
+            elif regular:
+                label.setPos(text_x-x, -14)
         for edge in graph.edges:
             self.parent_edges.setdefault(edge.child, []).append(edge.parent)
             item = self.scene.addPath(QPainterPath(),QPen(QColor('#818b99'),2))
             item.setZValue(-1)
             label = None
-            if edge.hidden:
+            if edge.hidden and not regular:
                 label = ChainLabel(edge.hidden, self)
                 self.scene.addItem(label)
             self.edge_items.append((edge,item,label))
@@ -792,8 +853,9 @@ class Window(QMainWindow):
         if self.repo.history_limited:
             suffix += ' · History limited: ancestry may be incomplete'
         mode = ('branch tips · history not loaded' if self.repo.branches_only else
+                'regular history · one commit per row' if self.repo.regular_history else
                 'named branch tips · all on top' if self.repo.all_branch_tips else 'terminal tips')
-        self.statusBar().showMessage(f'{self.repo.path} · {len(graph.tips)} {mode} · {len(self.repo.commits)} loaded commits{suffix}')
+        self.statusBar().showMessage(f'{self.repo.path} · {len(graph.nodes) if regular else len(graph.tips)} {mode} · {len(self.repo.commits)} loaded commits{suffix}')
         self.setWindowTitle(f'Git Branch Viewer — {self.repo.path}')
         if not graph.tips:
             self.details.setPlainText('No branch tips found. Empty repositories and detached commits without branch references are not displayed.')

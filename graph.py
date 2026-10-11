@@ -2,6 +2,7 @@
 from dataclasses import dataclass, field
 from git_reader import Repository
 from git_process import GitCancelled
+import heapq
 
 def check_cancelled(cancelled):
     if cancelled is not None and cancelled.is_set():
@@ -20,6 +21,7 @@ class Graph:
     edges: list[Edge]
     commit_ids: dict[str, str] = field(default_factory=dict)
     included_tips: set[str] = field(default_factory=set)
+    order: list[str] = field(default_factory=list)
 
     def commit_oid(self, node):
         return self.commit_ids.get(node, node)
@@ -45,6 +47,29 @@ def build_graph(repo: Repository, expanded: set[str] | None = None, cancelled=No
     if repo.branches_only:
         tips = sorted(repo.branches, key=lambda oid: repo.branches[oid][0])
         return Graph(set(tips), tips, [])
+    if repo.regular_history:
+        edges = [Edge(oid, parent, ()) for oid, commit in repo.commits.items()
+                 for parent in commit.parents if parent in repo.commits]
+        pending = dict.fromkeys(repo.commits, 0)
+        for edge in edges:
+            pending[edge.parent] += 1
+        indices = {oid: index for index, oid in enumerate(repo.commits)}
+        def priority(oid):
+            return (-repo.commit_timestamps.get(oid, 0), indices[oid], oid)
+        tips = [oid for oid in repo.commits if not pending[oid]]
+        queue = [priority(oid) for oid in tips]
+        heapq.heapify(queue)
+        order = []
+        while queue:
+            check_cancelled(cancelled)
+            _, _, oid = heapq.heappop(queue)
+            order.append(oid)
+            for parent in repo.commits[oid].parents:
+                if parent in pending:
+                    pending[parent] -= 1
+                    if not pending[parent]:
+                        heapq.heappush(queue, priority(parent))
+        return Graph(set(repo.commits), tips, edges, order=order)
     tips = terminal_tips(repo, cancelled=cancelled)
     reachable = set()
     todo = tips.copy()
@@ -120,4 +145,5 @@ def hide_nodes(graph: Graph, hidden: set[str]) -> Graph:
                 edges.append(Edge(before.child, after.parent,
                                   before.hidden + (oid,) + after.hidden))
     return Graph(nodes, [tip for tip in graph.tips if tip in nodes], list(dict.fromkeys(edges)),
-                 {key: oid for key, oid in graph.commit_ids.items() if key in nodes}, graph.included_tips & nodes)
+                 {key: oid for key, oid in graph.commit_ids.items() if key in nodes}, graph.included_tips & nodes,
+                 [oid for oid in graph.order if oid in nodes])

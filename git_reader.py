@@ -66,10 +66,12 @@ class Repository:
     branch_refs: dict[str, str] = field(default_factory=dict)
     all_branch_tips: bool = False
     remote_names: tuple[str, ...] = ()
+    regular_history: bool = False
+    commit_timestamps: dict[str, int] = field(default_factory=dict)
 
 def read_repository(path: str, remote: bool = False, branches_only: bool = False,
                     cancelled=None, progress=None, commit_limit: int | None = None,
-                    all_branch_tips: bool = False) -> Repository:
+                    all_branch_tips: bool = False, regular_history: bool = False) -> Repository:
     if commit_limit is not None and commit_limit <= 0:
         raise ValueError('History limit must be positive or None for all history.')
     path = str(Path(path).expanduser().resolve())
@@ -90,45 +92,48 @@ def read_repository(path: str, remote: bool = False, branches_only: bool = False
             branches.setdefault(oid, []).append(name)
             branch_refs[name] = ref
     commits = {}
+    timestamps = {}
     truncated = False
     if branches:
         # NUL fields avoid ambiguity from whitespace and multiline messages.
-        ordering = ['--no-walk=sorted'] if branches_only else ['--topo-order']
+        ordering = ['--no-walk=sorted'] if branches_only else ['--date-order' if regular_history else '--topo-order']
         if commit_limit is not None and not branches_only:
             ordering.append(f'--max-count={commit_limit+1}')
         report('Reading branch tips' if branches_only else 'Reading commit history')
         output = git('log', *ordering, '--no-show-signature',
-                     '--format=%H%x00%P%x00%an%x00%aI%x00%B%x00', '--stdin',
+                     '--format=%H%x00%P%x00%an%x00%aI%x00%B%x00%ct%x00', '--stdin',
                      input_bytes=('\n'.join(branches)+'\n').encode())
         fields = output.split('\0')
-        for i in range(0, len(fields)-1, 5):
+        for i in range(0, len(fields)-1, 6):
             if cancelled is not None and cancelled.is_set():
                 raise GitCancelled()
-            oid, parents, author, date, message = fields[i:i+5]
+            oid, parents, author, date, message, timestamp = fields[i:i+6]
             oid = oid.strip()
             if not branches_only and commit_limit is not None and len(commits) >= commit_limit:
                 truncated = True
                 break
             commits[oid] = Commit(oid, tuple(parents.split()), author, date, message.strip())
+            timestamps[oid] = int(timestamp)
         # A global history budget must never remove an older branch head.
         missing_tips = set(branches)-commits.keys()
         if missing_tips:
             report('Reading remaining branch tips')
             tip_fields = git('log', '--no-walk=sorted', '--no-show-signature',
-                             '--format=%H%x00%P%x00%an%x00%aI%x00%B%x00', '--stdin',
+                             '--format=%H%x00%P%x00%an%x00%aI%x00%B%x00%ct%x00', '--stdin',
                              input_bytes=('\n'.join(sorted(missing_tips))+'\n').encode()).split('\0')
-            for i in range(0, len(tip_fields)-1, 5):
+            for i in range(0, len(tip_fields)-1, 6):
                 if cancelled is not None and cancelled.is_set():
                     raise GitCancelled()
-                oid, parents, author, date, message = tip_fields[i:i+5]
+                oid, parents, author, date, message, timestamp = tip_fields[i:i+6]
                 oid = oid.strip()
                 commits[oid] = Commit(oid, tuple(parents.split()), author, date, message.strip())
+                timestamps[oid] = int(timestamp)
     incomplete = truncated and any(p not in commits for c in commits.values() for p in c.parents)
     report('Reading worktree checkouts')
     worktrees = read_worktrees(path, cancelled=cancelled)
     return Repository(path, commits, branches, git('rev-parse', '--is-shallow-repository').strip() == 'true',
                       branches_only, commit_limit, incomplete, worktrees, branch_refs, all_branch_tips,
-                      tuple(git('remote').splitlines()) if remote else ())
+                      tuple(git('remote').splitlines()) if remote else (), regular_history, timestamps)
 
 def read_diff(repo: Repository, oid: str, parent: str | None) -> str:
     """Compare a commit to an actual parent (or empty tree for a root)."""

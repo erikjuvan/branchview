@@ -47,7 +47,7 @@ class HistoryLimitTest(unittest.TestCase):
             read_repository(self.path, commit_limit=0)
 
     def test_load_more_preserves_view_selection_expansion_and_positions(self):
-        window = Window(self.path, history_limit=3)
+        window = Window(self.path, history_limit=3, presentation='terminal')
         self.addCleanup(window.close)
         wait_for_load(window)
         window.show()
