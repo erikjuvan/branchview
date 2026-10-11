@@ -1,4 +1,5 @@
 import unittest
+from PySide6.QtCore import QPoint
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QApplication
 
@@ -63,7 +64,7 @@ class ShortcutPanelTest(unittest.TestCase):
         self.assertEqual(panel.geometry(), bounds)
         self.assertEqual(panel.entries, entries)
         self.assertEqual(panel.geometry().top(), 0)
-        self.assertGreaterEqual(window.details.geometry().top(), panel.geometry().bottom())
+        self.assertGreaterEqual(window.details.mapTo(window.sidebar, QPoint(0, 0)).y(), panel.geometry().bottom())
         window.details.show_commit(window.repo, self.ids[0])
         self.app.processEvents()
         self.assertEqual(panel.entries, entries)

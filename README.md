@@ -41,6 +41,12 @@ larger initial budget or `--max-commits 0` for all history.
 
 ## Controls
 
+- The right sidebar lists all loaded named branches, including remote branches
+  when **Include remote branches** is enabled. Filter by name, then click a branch
+  (or select it and press Enter) to reveal its tip, select it and zoom to a readable
+  view. Hidden or collapsed tips are revealed. Drag the divider between the list
+  and commit details to adjust their heights.
+
 - B with one commit selected, or right-click → Browse files at this commit,
   opens a commit-pinned file tree with path filtering and background text previews.
   It shows all tracked files, including unchanged ones. The checkout is untouched.

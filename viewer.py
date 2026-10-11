@@ -17,6 +17,7 @@ from layout import layout, branch_layout
 from shortcut_panel import ShortcutPanel
 from commit_browser import CommitBrowser
 from vscode_open import SnapshotOpenDialog
+from branch_panel import BranchPanel
 
 class View(QGraphicsView):
     def __init__(self, scene):
@@ -286,7 +287,14 @@ class Window(QMainWindow):
         sidebar_layout.setContentsMargins(0, 0, 0, 0)
         sidebar_layout.setSpacing(0)
         sidebar_layout.addWidget(self.shortcuts_panel, 0, Qt.AlignmentFlag.AlignTop)
-        sidebar_layout.addWidget(self.details, 1)
+        self.branch_panel = BranchPanel()
+        self.branch_panel.branch_clicked.connect(self.jump_to_branch)
+        sidebar_content = QSplitter(Qt.Orientation.Vertical)
+        sidebar_content.addWidget(self.branch_panel)
+        sidebar_content.addWidget(self.details)
+        sidebar_content.setChildrenCollapsible(False)
+        sidebar_content.setSizes([190, 430])
+        sidebar_layout.addWidget(sidebar_content, 1)
         splitter = QSplitter()
         splitter.addWidget(self.view)
         splitter.addWidget(self.sidebar)
@@ -609,6 +617,24 @@ class Window(QMainWindow):
             bounds = bounds.united(node.sceneBoundingRect())
             bounds = bounds.united(node.mapRectToScene(node.childrenBoundingRect()))
         self.view.fit_bounds(bounds)
+    def jump_to_branch(self, name, oid):
+        if not self.repo or name not in self.repo.branches.get(oid, []):
+            return
+        if oid not in self.nodes:
+            self.expanded.add(oid)
+        if oid in self.hidden_nodes or oid not in self.nodes:
+            self.hidden_nodes.discard(oid)
+            self.render()
+        node = self.nodes.get(oid)
+        if node is None:
+            return
+        self.scene.clearSelection()
+        node.setSelected(True)
+        bounds = node.sceneBoundingRect().united(node.mapRectToScene(node.childrenBoundingRect()))
+        self.view.fit_bounds(bounds.adjusted(-120, -90, 120, 90))
+        if self.view.transform().m11() > 1.5:
+            self.view.scale(1.5/self.view.transform().m11(), 1.5/self.view.transform().m11())
+        self.view.centerOn(bounds.center())
     def reset_layout(self):
         self.manual_positions.clear()
         self.render()
@@ -654,6 +680,7 @@ class Window(QMainWindow):
                 label.setPos(x, y)
                 reserve(label.sceneBoundingRect().adjusted(-4,-4,4,4))
     def render(self):
+        self.branch_panel.set_repository(self.repo)
         self.details.cancel_pending()
         self.details.setPlainText('Select a commit to inspect its history and changes.')
         self.inspected_selection = set()
@@ -708,7 +735,7 @@ class Window(QMainWindow):
                 note.setPos(12, 28 if self.repo.history_limited and any(p not in self.repo.commits for p in commit.parents) else 10)
                 self.labels.append(note)
             checkouts = [wt for wt in self.repo.worktrees if wt.active and wt.head == oid]
-            if display_id in graph.tips or (checkouts and not (self.repo.all_branch_tips and oid in shared_copies)):
+            if display_id in graph.tips or ((checkouts or oid in self.repo.branches) and not (self.repo.all_branch_tips and oid in shared_copies)):
                 titles = []
                 for name in self.repo.branches.get(oid, []):
                     trees = [wt for wt in checkouts if wt.branch == self.repo.branch_refs.get(name, 'refs/heads/'+name)]
