@@ -41,6 +41,12 @@ larger initial budget or `--max-commits 0` for all history.
 
 ## Controls
 
+- B with one commit selected, or right-click → Browse files at this commit,
+  opens a commit-pinned file tree with path filtering and background text previews.
+  It shows all tracked files, including unchanged ones. The checkout is untouched.
+  Binary/large files, symlinks and Git LFS pointers have descriptive previews;
+  submodules appear as references without loading their contents.
+
 - Repositories open in independent, closable, movable tabs. Each tab retains its
   graph, selection, camera, sidebar and display options. Opening the same checkout
   again selects its existing tab. Ctrl+O opens, Ctrl+W closes the current tab,

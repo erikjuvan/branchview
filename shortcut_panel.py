@@ -46,6 +46,7 @@ class ShortcutPanel(QFrame):
             add(window.top_shortcut, 'Jump to and fit top commits')
             add(window.rearrange_shortcut, 'Rearrange visible nodes')
             if count == 1:
+                add(window.browse_shortcut, 'Browse files at selected commit')
                 add(window.diff_shortcut, 'Diff selected commit', 'Compare against a parent; roots use the empty tree. Merge commits offer a parent selector.')
             elif count == 2:
                 add(window.diff_shortcut, 'Compare the two selected commits')

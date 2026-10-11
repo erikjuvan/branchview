@@ -15,6 +15,7 @@ from repository_loader import RepositoryLoader
 from graph import build_graph, hide_nodes
 from layout import layout, branch_layout
 from shortcut_panel import ShortcutPanel
+from commit_browser import CommitBrowser
 
 class View(QGraphicsView):
     def __init__(self, scene):
@@ -267,6 +268,9 @@ class Window(QMainWindow):
         self.diff_shortcut = QShortcut(QKeySequence(Qt.Key.Key_D), self)
         self.diff_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
         self.diff_shortcut.activated.connect(self.diff_selected_nodes)
+        self.browse_shortcut = QShortcut(QKeySequence(Qt.Key.Key_B), self)
+        self.browse_shortcut.activated.connect(self.browse_selected_commit)
+        self.commit_browsers = []
         self.details = CommitSidebar()
         self.details.setReadOnly(True)
         self.details.anchorClicked.connect(self.open_detail_link)
@@ -480,6 +484,8 @@ class Window(QMainWindow):
         self.render()
     def node_menu(self, oid):
         menu = QMenu(self)
+        browse = menu.addAction('Browse files at this commit…')
+        browse.triggered.connect(lambda: QTimer.singleShot(0, lambda: self.browse_commit(oid)))
         action = menu.addAction('Hide node')
         action.triggered.connect(lambda: QTimer.singleShot(0, lambda: self.hide_node(oid)))
         selected = {item.oid for item in self.scene.selectedItems() if isinstance(item, Node)}
@@ -488,6 +494,17 @@ class Window(QMainWindow):
             action = menu.addAction('Diff selected commits…')
             action.triggered.connect(lambda: QTimer.singleShot(0, lambda: self.show_commit_diff(source, target)))
         return menu
+    def browse_selected_commit(self):
+        selected = {item.oid for item in self.scene.selectedItems() if isinstance(item, Node)}
+        if len(selected) == 1:
+            self.browse_commit(next(iter(selected)))
+    def browse_commit(self, oid):
+        if not self.repo:
+            return
+        browser = CommitBrowser(self.repo.path, oid, self)
+        self.commit_browsers.append(browser)
+        browser.destroyed.connect(lambda: self.commit_browsers.remove(browser) if browser in self.commit_browsers else None)
+        browser.show()
     def diff_selected_nodes(self):
         if not self.repo:
             return
@@ -786,6 +803,8 @@ class Window(QMainWindow):
         self.details.cancel_pending()
         if self.search_dialog is not None:
             self.search_dialog.close()
+        for browser in list(self.commit_browsers):
+            browser.close()
     def update_selection_highlights(self):
         selected = {item.display_id for item in self.scene.selectedItems() if isinstance(item, Node)}
         ancestry = set()
