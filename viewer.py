@@ -65,6 +65,7 @@ class Node(QGraphicsEllipseItem):
         self.oid = oid
         self.window = window
         self.tip = tip
+        self.checked_out = any(wt.active and wt.head == oid for wt in window.repo.worktrees) if window.repo else False
         self.setPos(x,y)
         self.setBrush(QColor('#75baff' if tip else '#b5bdc9'))
         self.setPen(QPen(QColor('#d5dce6'), 1))
@@ -93,6 +94,8 @@ class Node(QGraphicsEllipseItem):
             fill, border, width = '#ffd166', '#fff0c2', 3
         elif ancestor:
             fill, border, width = '#5ce0cc', '#b2fff1', 2
+        elif self.checked_out:
+            fill, border, width = '#c792ea', '#e2c4f7', 2
         elif active:
             fill, border, width = '#59616e', '#798391', 1
         else:
@@ -122,6 +125,7 @@ class NodeLabel(QGraphicsTextItem):
         super().__init__(text, node)
         self.node = node
         self.base_color = QColor('#e1e5eb')
+        self.worktree_badge = False
         self.setCursor(Qt.CursorShape.ArrowCursor)
     def paint(self, painter, option, widget=None):
         if self.node.isSelected():
@@ -561,12 +565,31 @@ class Window(QMainWindow):
                 boundary.setPos(12, 10)
                 boundary.setToolTip('Use Load more ancestors or choose All history.')
                 self.labels.append(boundary)
-            if oid in graph.tips:
-                names = NodeLabel('\n'.join(self.repo.branches[oid]),node)
-                self.labels.append(names)
-                names.base_color = QColor('#75baff')
-                names.setDefaultTextColor(QColor('#75baff'))
-                names.setPos(-10,-names.boundingRect().height()-15)
+            checkouts = [wt for wt in self.repo.worktrees if wt.active and wt.head == oid]
+            if oid in graph.tips or checkouts:
+                titles = []
+                for name in self.repo.branches.get(oid, []):
+                    trees = [wt for wt in checkouts if wt.branch == self.repo.branch_refs.get(name, 'refs/heads/'+name)]
+                    title = NodeLabel(name+(' [WT]' if trees else ''), node)
+                    title.worktree_badge = bool(trees)
+                    title.base_color = QColor('#c792ea' if trees else '#75baff')
+                    title.setDefaultTextColor(title.base_color)
+                    if trees:
+                        title.setToolTip('Checked out in worktree:\n'+'\n'.join(wt.path for wt in trees))
+                    titles.append(title)
+                detached = [wt for wt in checkouts if wt.detached]
+                if detached:
+                    title = NodeLabel('Detached HEAD [WT]', node)
+                    title.worktree_badge = True
+                    title.base_color = QColor('#c792ea')
+                    title.setDefaultTextColor(title.base_color)
+                    title.setToolTip('\n'.join(wt.path for wt in detached))
+                    titles.append(title)
+                y = -15-sum(title.boundingRect().height() for title in titles)
+                for title in titles:
+                    title.setPos(-10, y)
+                    y += title.boundingRect().height()
+                    self.labels.append(title)
         for edge in graph.edges:
             self.parent_edges.setdefault(edge.child, []).append(edge.parent)
             item = self.scene.addPath(QPainterPath(),QPen(QColor('#818b99'),2))
@@ -647,9 +670,9 @@ class Window(QMainWindow):
             node.highlight(oid in ancestry, active)
         for label in self.labels:
             oid = label.node.oid
-            color = QColor('#ffd166') if oid in selected else QColor('#80ead9') if oid in ancestry else label.base_color
+            color = label.base_color if label.worktree_badge else QColor('#ffd166') if oid in selected else QColor('#80ead9') if oid in ancestry else label.base_color
             label.setDefaultTextColor(color)
-            label.setOpacity(.6 if active and oid not in ancestry else 1)
+            label.setOpacity(.6 if active and oid not in ancestry and not label.worktree_badge else 1)
             label.update()
         for edge, item, label in self.edge_items:
             highlighted = edge.child in ancestry

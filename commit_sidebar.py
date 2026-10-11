@@ -22,6 +22,19 @@ def commit_link(oid, subject=''):
 def section(title, body):
     return f'<h3>{escape(title)}</h3>{body}'
 
+def worktree_html(wt, relation, opened=False):
+    location = 'Main worktree' if wt.main else 'Linked worktree'
+    if opened:
+        location += ' · opened here'
+    branch = wt.branch.removeprefix('refs/heads/') if wt.branch else 'detached HEAD'
+    notes = []
+    if wt.locked is not None:
+        notes.append('Locked'+(': '+wt.locked if wt.locked else ''))
+    if wt.prunable is not None:
+        notes.append('Prunable'+(': '+wt.prunable if wt.prunable else ''))
+    return (f'<p><b>{escape(location)} · {escape(branch)}</b><br>{escape(wt.path)}<br>'
+            f'{escape(relation)}'+('<br>'+escape(' · '.join(notes)) if notes else '')+'</p>')
+
 
 def list_html(items, limit=80):
     items = list(items)
@@ -31,14 +44,19 @@ def list_html(items, limit=80):
     return body
 
 
-def render_basic(commit, branches):
+def render_basic(commit, branches, repo=None):
     subject = commit.message.split('\n')[0]
-    return (f'<h2>{escape(subject)}</h2>'
+    body = (f'<h2>{escape(subject)}</h2>'
             f'<p>Commit: {escape(commit.oid)}<br>'
             f'Branches pointing here: {escape(", ".join(branches)) or "None"}<br>'
             f'Author: {escape(commit.author)}<br>Date: {escape(commit.date)}</p>'
             + section('Parents', list_html(commit_link(p) for p in commit.parents) if commit.parents else 'Root commit')
             + section('Message', f'<pre style="white-space: pre-wrap">{escape(commit.message)}</pre>'))
+    if repo is not None:
+        heads = [wt for wt in repo.worktrees if wt.head == commit.oid and not wt.bare]
+        body += section('Worktree HEAD checkouts', ''.join(worktree_html(wt, 'HEAD is this commit') for wt in heads)
+                        or 'No worktree HEAD points here. Checking worktree ancestry…')
+    return body
 
 
 def render_info(info):
@@ -53,6 +71,9 @@ def render_info(info):
     body += section('References pointing here', list_html(escape(ref) for ref in info.tip_refs))
     body += section('Contained in branches', list_html(escape(ref) for ref in info.branches))
     body += section('Contained in tags', list_html(escape(tag) for tag in info.tags))
+    body += section('Worktree checkouts and history', ''.join(worktree_html(match.worktree, match.relation, match.opened)
+                                                            for match in info.worktrees)
+                    or 'No matching worktree checkout or ancestry found in available history.')
     parents = []
     for index, oid in enumerate(c.parents):
         role = ('Destination-side parent (first parent)' if index == 0 else f'Incoming parent {index}') if len(c.parents) > 1 else 'Parent'
@@ -148,7 +169,7 @@ class CommitSidebar(QTextBrowser):
             self.setHtml(render_info(self.cache[oid]))
             return
         c = repo.commits.get(oid)
-        self.basic = render_basic(c, repo.branches.get(oid, [])) if c else f'<p>Commit: {escape(oid)}</p>'
+        self.basic = render_basic(c, repo.branches.get(oid, []), repo) if c else f'<p>Commit: {escape(oid)}</p>'
         self.setHtml(self.basic+'<p>Loading relationships and change summary…</p>')
         job = InfoJob(key, repo, oid)
         job.signals.finished.connect(self.finished)

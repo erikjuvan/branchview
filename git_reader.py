@@ -1,5 +1,5 @@
 """Read-only Git access. No shell commands or repository modifications."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import os
 import subprocess
@@ -13,6 +13,46 @@ class Commit:
     date: str
     message: str
 
+@dataclass(frozen=True)
+class Worktree:
+    path: str
+    head: str = ''
+    branch: str | None = None
+    detached: bool = False
+    bare: bool = False
+    locked: str | None = None
+    prunable: str | None = None
+    main: bool = False
+
+    @property
+    def active(self):
+        return not self.bare and self.prunable is None and bool(self.head.strip('0'))
+
+def parse_worktrees(output: bytes) -> list[Worktree]:
+    records, attributes = [], {}
+    for item in [*output.split(b'\0'), b'']:
+        if item:
+            key, _, value = item.decode('utf-8', errors='replace').partition(' ')
+            attributes[key] = value
+        elif attributes:
+            if 'worktree' in attributes:
+                records.append(Worktree(attributes['worktree'], attributes.get('HEAD', ''),
+                                        attributes.get('branch'), 'detached' in attributes,
+                                        'bare' in attributes, attributes.get('locked'),
+                                        attributes.get('prunable'), not records))
+            attributes = {}
+    return records
+
+def read_worktrees(path: str, cancelled=None, git_runner=None) -> list[Worktree]:
+    args = ('worktree', 'list', '--porcelain', '-z')
+    output = git_runner(*args) if git_runner else run_git(path, args, cancelled=cancelled)
+    return parse_worktrees(output)
+
+def opened_worktree(path: str, worktrees: list[Worktree]) -> Worktree | None:
+    opened = Path(path).resolve()
+    candidates = [wt for wt in worktrees if opened.is_relative_to(Path(wt.path).resolve())]
+    return max(candidates, key=lambda wt: len(wt.path), default=None)
+
 @dataclass
 class Repository:
     path: str
@@ -22,6 +62,8 @@ class Repository:
     branches_only: bool = False
     commit_limit: int | None = None
     history_limited: bool = False
+    worktrees: list[Worktree] = field(default_factory=list)
+    branch_refs: dict[str, str] = field(default_factory=dict)
 
 def read_repository(path: str, remote: bool = False, branches_only: bool = False,
                     cancelled=None, progress=None, commit_limit: int | None = None) -> Repository:
@@ -37,11 +79,13 @@ def read_repository(path: str, remote: bool = False, branches_only: bool = False
     git('rev-parse', '--git-dir')
     refs = ['refs/heads'] + (['refs/remotes'] if remote else [])
     branches = {}
+    branch_refs = {}
     report('Reading branch references')
-    for line in git('for-each-ref', '--format=%(objectname)%09%(refname:short)%09%(symref)', *refs).splitlines():
-        oid, name, symbolic = line.split('\t')
+    for line in git('for-each-ref', '--format=%(objectname)%09%(refname:short)%09%(symref)%09%(refname)', *refs).splitlines():
+        oid, name, symbolic, ref = line.split('\t')
         if not symbolic:
             branches.setdefault(oid, []).append(name)
+            branch_refs[name] = ref
     commits = {}
     truncated = False
     if branches:
@@ -77,8 +121,10 @@ def read_repository(path: str, remote: bool = False, branches_only: bool = False
                 oid = oid.strip()
                 commits[oid] = Commit(oid, tuple(parents.split()), author, date, message.strip())
     incomplete = truncated and any(p not in commits for c in commits.values() for p in c.parents)
+    report('Reading worktree checkouts')
+    worktrees = read_worktrees(path, cancelled=cancelled)
     return Repository(path, commits, branches, git('rev-parse', '--is-shallow-repository').strip() == 'true',
-                      branches_only, commit_limit, incomplete)
+                      branches_only, commit_limit, incomplete, worktrees, branch_refs)
 
 def read_diff(repo: Repository, oid: str, parent: str | None) -> str:
     """Compare a commit to an actual parent (or empty tree for a root)."""

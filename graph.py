@@ -57,6 +57,7 @@ def build_graph(repo: Repository, expanded: set[str] | None = None, cancelled=No
             if parent in reachable:
                 children[parent].append(oid)
     keep = set(tips) | (set(expanded or ()) & reachable)
+    keep.update(wt.head for wt in repo.worktrees if wt.active and wt.head in reachable)
     for oid in reachable:
         check_cancelled(cancelled)
         parents = [p for p in repo.commits[oid].parents if p in reachable]

@@ -38,6 +38,13 @@ larger initial budget or `--max-commits 0` for all history.
   turquoise; unrelated paths are dimmed. Multiple selections highlight the union
   of their ancestry. Branch-only mode highlights selections without loading history.
 - Dark gray theme throughout the window and graph.
+- Checked-out branch labels are purple and marked [WT], with worktree paths in
+  their tooltips. Worktree HEAD nodes are purple when not selected or highlighted
+  as ancestors. Checked-out branch heads remain visible even inside collapsed
+  history. Detached worktree HEADs are marked when present in the loaded graph.
+  The sidebar distinguishes HEAD checkouts from commits contained in worktree
+  branch history, and shows paths, main/linked status, locks, and prunable records.
+  Refresh updates worktree colors and cached details. No worktrees are modified.
 - Drag any commit node or its label to organize the graph freely. Edges and
   collapsed-chain labels follow automatically; the view stays fixed during dragging. Branch tip names move with nodes.
 - Manual positions survive expansion, collapse, and refresh within the same

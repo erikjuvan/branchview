@@ -1,9 +1,9 @@
 """On-demand commit provenance derived from locally available Git history."""
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, replace, field
 import re
 from threading import Event
 
-from git_reader import Commit, Repository, ChangedFile, _git_bytes, read_changed_files
+from git_reader import Commit, Repository, ChangedFile, Worktree, read_changed_files, read_worktrees, opened_worktree
 from git_process import run_git, GitCancelled as InspectionCancelled
 
 
@@ -17,6 +17,12 @@ class Integration:
     merge: str | None
     subject: str
     kind: str
+
+@dataclass(frozen=True)
+class WorktreeMatch:
+    worktree: Worktree
+    relation: str
+    opened: bool = False
 
 
 @dataclass
@@ -36,6 +42,7 @@ class CommitInfo:
     files: list[ChangedFile]
     statistics: str
     warnings: list[str]
+    worktrees: list[WorktreeMatch] = field(default_factory=list)
 
 
 def read_commit_info(repo: Repository, oid: str, cancelled: Event | None = None,
@@ -73,6 +80,7 @@ def read_commit_info(repo: Repository, oid: str, cancelled: Event | None = None,
                'refs/heads', 'refs/remotes', 'refs/tags')
     branches, tags, tips = [], [], []
     branch_tips = []
+    containing_refs = set()
     for line in refs.splitlines():
         ref, object_id, peeled, symbolic = line.split('\t')
         if symbolic:
@@ -85,7 +93,33 @@ def read_commit_info(repo: Repository, oid: str, cancelled: Event | None = None,
             tags.append(name)
         else:
             branches.append(name)
+            containing_refs.add(ref)
             branch_tips.append((name, object_id))
+
+    worktree_matches = []
+    worktrees = read_worktrees(repo.path, git_runner=git_bytes)
+    opened = opened_worktree(repo.path, worktrees)
+    for wt in worktrees:
+        check()
+        if wt.bare or not wt.head.strip('0'):
+            continue
+        if wt.head == oid:
+            relation = 'HEAD is this commit'
+        elif not wt.active:
+            continue
+        elif wt.branch:
+            if wt.branch not in containing_refs:
+                continue
+            relation = 'Commit is in the checked-out branch history'
+        else:
+            try:
+                if git('rev-list', '--max-count=1', oid, '--not', wt.head, '--').strip():
+                    continue
+            except RuntimeError:
+                warnings.append(f'Could not inspect detached worktree history: {wt.path}')
+                continue
+            relation = 'Commit is an ancestor of detached HEAD'
+        worktree_matches.append(WorktreeMatch(wt, relation, wt == opened))
 
     parent_subjects = {}
     if commit.parents:
@@ -146,4 +180,4 @@ def read_commit_info(repo: Repository, oid: str, cancelled: Event | None = None,
         warnings.append('Cannot compare against the parent: '+str(exc))
     return CommitInfo(commit, email, committer, committer_email, committed, tree,
                       tips, branches, tags, parent_subjects, children, integrations,
-                      files, statistics or 'No file changes relative to this parent.', warnings)
+                      files, statistics or 'No file changes relative to this parent.', warnings, worktree_matches)
