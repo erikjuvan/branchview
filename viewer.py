@@ -289,6 +289,10 @@ class Window(QMainWindow):
         self.browse_shortcut.activated.connect(self.browse_selected_commit)
         self.vscode_shortcut = QShortcut(QKeySequence(Qt.Key.Key_V), self)
         self.vscode_shortcut.activated.connect(self.open_selected_in_vscode)
+        self.child_shortcut = QShortcut(QKeySequence('Ctrl+N'), self)
+        self.child_shortcut.activated.connect(self.go_to_child_commit)
+        self.parent_shortcut = QShortcut(QKeySequence('Ctrl+P'), self)
+        self.parent_shortcut.activated.connect(self.go_to_parent_commit)
         self.commit_browsers = []
         self.snapshot_dialogs = []
         self.details = CommitSidebar()
@@ -559,6 +563,13 @@ class Window(QMainWindow):
         self.render()
     def node_menu(self, oid):
         menu = QMenu(self)
+        for title, direction, shortcut in [('Go to child commit', 'child', self.child_shortcut),
+                                            ('Go to parent commit', 'parent', self.parent_shortcut)]:
+            action = menu.addAction(f'{title}\t{shortcut.key().toString(QKeySequence.SequenceFormat.NativeText)}')
+            action.setEnabled(bool(self.adjacent_commits(oid, direction)))
+            action.triggered.connect(lambda checked=False, direction=direction:
+                                     QTimer.singleShot(0, lambda: self.navigate_commit(direction, oid)))
+        menu.addSeparator()
         browse = menu.addAction('Browse files at this commit…')
         browse.triggered.connect(lambda: QTimer.singleShot(0, lambda: self.browse_commit(oid)))
         vscode = menu.addAction('Open commit in VS Code…')
@@ -571,6 +582,42 @@ class Window(QMainWindow):
             action = menu.addAction('Diff selected commits…')
             action.triggered.connect(lambda: QTimer.singleShot(0, lambda: self.show_commit_diff(source, target)))
         return menu
+    def adjacent_commits(self, oid, direction):
+        """Return actual loaded relatives in parent or repository history order."""
+        if not self.repo or oid not in self.repo.commits:
+            return []
+        if direction == 'parent':
+            relatives = [parent for parent in self.repo.commits[oid].parents if parent in self.repo.commits]
+        else:
+            relatives = [child for child, commit in self.repo.commits.items() if oid in commit.parents]
+        if self.repo.branches_only:
+            relatives = [relative for relative in relatives if relative in self.repo.branches]
+        return relatives
+    def go_to_child_commit(self):
+        self.navigate_commit('child')
+    def go_to_parent_commit(self):
+        self.navigate_commit('parent')
+    def navigate_commit(self, direction, oid=None):
+        if oid is None:
+            selected = {item.oid for item in self.scene.selectedItems() if isinstance(item, Node)}
+            if len(selected) != 1:
+                return
+            oid = next(iter(selected))
+        relatives = self.adjacent_commits(oid, direction)
+        if not relatives:
+            self.statusBar().showMessage(f'No loaded {direction} commit available.', 3000)
+            return
+        target = relatives[0]
+        if target not in self.nodes or target in self.hidden_nodes:
+            self.expanded.add(target)
+            self.hidden_nodes.discard(target)
+            self.render()
+        # Prefer the ancestry copy over a duplicate branch-tip entry.
+        node = self.display_nodes.get(target, self.nodes.get(target))
+        if node is not None:
+            self.scene.clearSelection()
+            node.setSelected(True)
+            self.view.centerOn(node)
     def browse_selected_commit(self):
         selected = {item.oid for item in self.scene.selectedItems() if isinstance(item, Node)}
         if len(selected) == 1:

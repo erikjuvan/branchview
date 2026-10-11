@@ -116,6 +116,10 @@ larger initial budget or `--max-commits 0` for all history.
 
 - Ctrl+F or Search: find loaded commits by hash, full message, or branch name.
   Enter or double-click jumps to the result, revealing collapsed or hidden nodes.
+- Ctrl+N / Ctrl+P: go to the selected commit's child / parent, revealing collapsed
+  or hidden commits and keeping the current zoom. Select one commit first.
+  With multiple relatives, navigation chooses the first child in loaded history
+  order or the first loaded Git parent. Navigation stops at loaded history boundaries.
   With an empty query, show branch tips. Branch-only mode searches only tip metadata.
 
 - Wheel: zoom around cursor. Left-drag blank background: select multiple nodes. Middle-drag: pan.

@@ -46,6 +46,8 @@ class ShortcutPanel(QFrame):
             add(window.top_shortcut, 'Jump to and fit top commits')
             add(window.rearrange_shortcut, 'Reset history layout' if window.repo and window.repo.regular_history and not window.repo.branches_only else 'Rearrange visible nodes')
             if count == 1:
+                add(window.child_shortcut, 'Go to child commit', 'Reveals hidden commits. Uses the first child in loaded history order.')
+                add(window.parent_shortcut, 'Go to parent commit', 'Reveals hidden commits. Uses the first loaded Git parent.')
                 add(window.browse_shortcut, 'Browse files at selected commit')
                 add(window.vscode_shortcut, 'Open selected commit in VS Code')
                 add(window.diff_shortcut, 'Diff selected commit', 'Compare against a parent; roots use the empty tree. Merge commits offer a parent selector.')
