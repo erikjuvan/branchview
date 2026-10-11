@@ -1,6 +1,13 @@
 """Topological depth, with every terminal tip exactly on the top row."""
 from collections import defaultdict, deque
+from math import ceil, sqrt
 from graph import Graph
+
+def branch_layout(graph: Graph) -> dict[str, tuple[float, float]]:
+    """Arrange branch tips in a compact grid for repositories with many refs."""
+    columns = max(1, min(5, ceil(sqrt(len(graph.tips)))))
+    return {oid: ((index % columns)*400, (index // columns)*150)
+            for index, oid in enumerate(graph.tips)}
 
 def layout(graph: Graph) -> dict[str, tuple[float, float]]:
     parents = defaultdict(list)

@@ -29,6 +29,9 @@ def terminal_tips(repo: Repository) -> list[str]:
     return sorted(set(repo.branches)-ancestors, key=lambda oid: repo.branches[oid][0])
 
 def build_graph(repo: Repository, expanded: set[str] | None = None) -> Graph:
+    if repo.branches_only:
+        tips = sorted(repo.branches, key=lambda oid: repo.branches[oid][0])
+        return Graph(set(tips), tips, [])
     tips = terminal_tips(repo)
     reachable = set()
     todo = tips.copy()

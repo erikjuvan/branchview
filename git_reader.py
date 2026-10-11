@@ -18,8 +18,9 @@ class Repository:
     commits: dict[str, Commit]
     branches: dict[str, list[str]]
     shallow: bool = False
+    branches_only: bool = False
 
-def read_repository(path: str, remote: bool = False) -> Repository:
+def read_repository(path: str, remote: bool = False, branches_only: bool = False) -> Repository:
     path = str(Path(path).expanduser().resolve())
     def git(*args):
         result = subprocess.run(['git', '--no-replace-objects', '-C', path, *args],
@@ -38,7 +39,8 @@ def read_repository(path: str, remote: bool = False) -> Repository:
     commits = {}
     if branches:
         # NUL fields avoid ambiguity from whitespace and multiline messages.
-        result = subprocess.run(['git', '--no-replace-objects', '-C', path, 'log', '--topo-order',
+        ordering = ['--no-walk=sorted'] if branches_only else ['--topo-order']
+        result = subprocess.run(['git', '--no-replace-objects', '-C', path, 'log', *ordering,
             '--no-show-signature', '--format=%H%x00%P%x00%an%x00%aI%x00%B%x00', '--stdin'],
             input='\n'.join(branches)+'\n', capture_output=True, encoding='utf-8', errors='replace',
             env={**os.environ, 'GIT_OPTIONAL_LOCKS':'0'}, timeout=120)
@@ -49,7 +51,8 @@ def read_repository(path: str, remote: bool = False) -> Repository:
             oid, parents, author, date, message = fields[i:i+5]
             oid = oid.strip()
             commits[oid] = Commit(oid, tuple(parents.split()), author, date, message.strip())
-    return Repository(path, commits, branches, git('rev-parse', '--is-shallow-repository').strip() == 'true')
+    return Repository(path, commits, branches, git('rev-parse', '--is-shallow-repository').strip() == 'true',
+                      branches_only)
 
 def read_diff(repo: Repository, oid: str, parent: str | None) -> str:
     """Compare a commit to an actual parent (or empty tree for a root)."""

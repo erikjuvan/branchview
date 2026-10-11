@@ -19,6 +19,9 @@ python main.py /path/to/repository
 Alternatively run `python main.py` and use Open. On Arch Linux, installing
 `pyside6` with the system package manager is another option.
 
+For large repositories, start with `python main.py --branches-only /path/to/repository`
+to avoid loading history on the first open.
+
 ## Controls
 
 - Wheel: zoom around cursor. Left-drag blank background: select multiple nodes. Middle-drag: pan.
@@ -53,6 +56,13 @@ Alternatively run `python main.py` and use Open. On Arch Linux, installing
 - Double-click a chain label: expand it. Collapse all restores compact view.
 - Refresh reloads branch references and history, resetting expansion.
 - Local branches by default; optionally include remote-tracking branches.
+- Branches only: show every branch tip in a compact grid, with no ancestor nodes
+  or ancestry edges. This also includes branches pointing to ancestors of other
+  branch tips. Names sharing a commit are grouped. Git loads only tip metadata;
+  parent diffs and comparisons between two tips remain available. Turn it off to
+  load the full history. Manual layouts are retained separately for each mode.
+  Two-tip diffs initially follow Git's commit-date order; the dialog lets you
+  reverse their direction.
 
 ## Graph meaning
 
@@ -70,7 +80,8 @@ terminal detection can only use available history.
 The application only reads Git data. It does not fetch, checkout, merge, or
 write repository files. Uncommitted changes, tags, and detached-only commits
 are outside the scope of this first version. Loading is synchronous; intended
-for small repositories with roughly ten branches. Layout is deterministic,
+for small repositories with roughly ten branches in history mode. Branch-only mode
+avoids history traversal and is useful for larger repositories. Layout is deterministic,
 but merge edges can cross and long labels can overlap in complicated histories.
 
 ## Verification

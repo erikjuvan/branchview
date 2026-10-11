@@ -1,4 +1,5 @@
 from PySide6.QtCore import Qt, QTimer
+from subprocess import TimeoutExpired
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QShortcut, QKeySequence
 from PySide6.QtWidgets import (QMainWindow, QGraphicsView, QGraphicsScene,
     QGraphicsEllipseItem, QGraphicsItem, QFileDialog, QMessageBox, QToolBar,
@@ -6,7 +7,7 @@ from PySide6.QtWidgets import (QMainWindow, QGraphicsView, QGraphicsScene,
 from git_reader import read_repository
 from diff_viewer import DiffViewer
 from graph import build_graph, hide_nodes
-from layout import layout
+from layout import layout, branch_layout
 
 class View(QGraphicsView):
     def __init__(self, scene):
@@ -125,12 +126,13 @@ class ChainLabel(QGraphicsTextItem):
         event.accept()
 
 class Window(QMainWindow):
-    def __init__(self, path=None):
+    def __init__(self, path=None, branches_only=False):
         super().__init__()
         self.repo = None
         self.expanded = set()
         self.hidden_nodes = set()
-        self.manual_positions = {}
+        self.positions_by_mode = {False: {}, True: {}}
+        self.manual_positions = self.positions_by_mode[False]
         self.nodes = {}
         self.labels = []
         self.edge_items = []
@@ -181,6 +183,11 @@ class Window(QMainWindow):
         self.remote = QCheckBox('Include remote branches')
         self.remote.toggled.connect(self.refresh)
         toolbar.addWidget(self.remote)
+        self.branches_only = QCheckBox('Branches only')
+        self.branches_only.setToolTip('Show all branch tips without loading ancestor history.')
+        self.branches_only.setChecked(branches_only)
+        self.branches_only.toggled.connect(self.refresh)
+        toolbar.addWidget(self.branches_only)
         if path:
             self.load(path)
     def open(self):
@@ -189,15 +196,28 @@ class Window(QMainWindow):
             self.load(path)
     def load(self, path):
         try:
-            repo = read_repository(path, self.remote.isChecked())
-        except (RuntimeError, OSError, TimeoutError) as exc:
+            repo = read_repository(path, self.remote.isChecked(), self.branches_only.isChecked())
+        except (RuntimeError, OSError, TimeoutError, TimeoutExpired) as exc:
+            if self.repo:
+                self.branches_only.blockSignals(True)
+                self.branches_only.setChecked(self.repo.branches_only)
+                self.branches_only.blockSignals(False)
             QMessageBox.warning(self, 'Cannot open repository', str(exc))
             return
         if self.repo is None or self.repo.path != repo.path:
-            self.manual_positions.clear()
+            for positions in self.positions_by_mode.values():
+                positions.clear()
             self.hidden_nodes.clear()
+        self.manual_positions = self.positions_by_mode[repo.branches_only]
         self.repo = repo
         self.expanded.clear()
+        explanation = ('Branches only: ancestor history is not loaded.\n'
+                       'Nodes are branch tips arranged in a grid; positions do not represent ancestry.'
+                       if repo.branches_only else
+                       'History view: vertical position represents ancestry, not time.')
+        self.details.setPlainText(explanation + '\n\nClick a commit to inspect it.\n'
+                                  'D: diff one or two selected commits\n'
+                                  'Delete: hide selected nodes\nR: rearrange visible nodes')
         self.render()
         self.view.fit()
     def refresh(self, *_):
@@ -292,8 +312,10 @@ class Window(QMainWindow):
             return
         graph = hide_nodes(build_graph(self.repo, self.expanded), self.hidden_nodes)
         # Hidden tip removal can expose new topmost nodes.
-        graph.tips = sorted(graph.nodes - {e.parent for e in graph.edges})
-        self.manual_positions.update(layout(graph))
+        if not self.repo.branches_only:
+            graph.tips = sorted(graph.nodes - {e.parent for e in graph.edges})
+        arrange = branch_layout if self.repo.branches_only else layout
+        self.manual_positions.update(arrange(graph))
         self.render()
         self.view.fit()
     def reset_layout(self):
@@ -321,7 +343,8 @@ class Window(QMainWindow):
         if not self.repo:
             return
         graph = build_graph(self.repo, self.expanded)
-        positions = layout(graph)
+        arrange = branch_layout if self.repo.branches_only else layout
+        positions = arrange(graph)
         graph = hide_nodes(graph, self.hidden_nodes)
         positions = {oid: xy for oid,xy in positions.items() if oid in graph.nodes}
         positions.update({oid: xy for oid, xy in self.manual_positions.items() if oid in graph.nodes})
@@ -351,7 +374,8 @@ class Window(QMainWindow):
         self.update_edges()
         self.scene.setSceneRect(self.scene.itemsBoundingRect().adjusted(-1000,-1000,1000,1000))
         suffix = ' · Shallow history: ancestry is incomplete' if self.repo.shallow else ''
-        self.statusBar().showMessage(f'{self.repo.path} · {len(graph.tips)} terminal tips · {len(self.repo.commits)} commits{suffix}')
+        mode = 'branch tips · history not loaded' if self.repo.branches_only else 'terminal tips'
+        self.statusBar().showMessage(f'{self.repo.path} · {len(graph.tips)} {mode} · {len(self.repo.commits)} loaded commits{suffix}')
         self.setWindowTitle(f'Git Branch Viewer — {self.repo.path}')
         if not graph.tips:
             self.details.setPlainText('No branch tips found. Empty repositories and detached commits without branch references are not displayed.')
