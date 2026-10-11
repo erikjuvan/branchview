@@ -33,7 +33,7 @@ Alternatively run `python main.py` and use Open. On Arch Linux, installing
   Press Delete while the graph has focus to hide all selected nodes.
   Show hidden nodes restores them; expanding a chain also reveals its hidden nodes.
   Hidden state lasts for the session and is retained on refresh.
-- Rearrange visible nodes automatically lays out only the visible graph.
+- R or Rearrange visible nodes: automatically lay out only the visible graph.
 - Double-click a node or its label to view its patch and diff statistics against
   its actual Git parent. Merge commits provide a parent selector. Root commits
   compare against the empty tree.
