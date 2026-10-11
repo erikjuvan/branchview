@@ -75,3 +75,53 @@ def _read_patch(repo: Repository, args: list[str]) -> str:
     if result.returncode:
         raise RuntimeError(result.stderr.strip())
     return result.stdout
+
+@dataclass(frozen=True)
+class ChangedFile:
+    status: str
+    old_path: str
+    new_path: str
+    old_blob: str
+    new_blob: str
+    old_mode: str
+    new_mode: str
+
+def _git_bytes(repo: Repository, *args: str) -> bytes:
+    result = subprocess.run(['git', '--no-replace-objects', '-C', repo.path, *args],
+                            capture_output=True, timeout=120,
+                            env={**os.environ, 'GIT_OPTIONAL_LOCKS': '0', 'GIT_TERMINAL_PROMPT': '0'})
+    if result.returncode:
+        raise RuntimeError(result.stderr.decode('utf-8', errors='replace').strip())
+    return result.stdout
+
+def read_changed_files(repo: Repository, source: str | None, target: str) -> list[ChangedFile]:
+    """Read NUL-delimited tree changes, retaining blob IDs and rename paths."""
+    if target not in repo.commits or (source is not None and source not in repo.commits
+                                      and source not in repo.commits[target].parents):
+        raise ValueError('Invalid comparison commit')
+    flags = ['--raw', '-z', '--no-abbrev', '--no-ext-diff', '--no-textconv', '-M']
+    args = (['diff', *flags, source, target, '--'] if source else
+            ['diff-tree', '--root', '--no-commit-id', '-r', *flags, target, '--'])
+    fields = _git_bytes(repo, *args).split(b'\0')
+    changes = []
+    i = 0
+    while i < len(fields) and fields[i]:
+        old_mode, new_mode, old_blob, new_blob, status = fields[i].decode('ascii').split()
+        old_path = fields[i+1].decode('utf-8', errors='replace')
+        i += 2
+        new_path = old_path
+        if status[0] in 'RC':
+            new_path = fields[i].decode('utf-8', errors='replace')
+            i += 1
+        changes.append(ChangedFile(status, old_path, new_path, old_blob, new_blob,
+                                   old_mode.lstrip(':'), new_mode))
+    return changes
+
+def read_blob(repo: Repository, oid: str, limit: int = 2_000_000) -> bytes:
+    """Load one blob on demand, with a bounded text-preview size."""
+    if not oid.strip('0'):
+        return b''
+    size = int(_git_bytes(repo, 'cat-file', '-s', oid))
+    if size > limit:
+        raise ValueError('File is too large for the text preview (limit: 2 MB).')
+    return _git_bytes(repo, 'cat-file', 'blob', oid)

@@ -1,10 +1,10 @@
 from PySide6.QtCore import Qt, QTimer
-from subprocess import TimeoutExpired
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QShortcut, QKeySequence
 from PySide6.QtWidgets import (QMainWindow, QGraphicsView, QGraphicsScene,
     QGraphicsEllipseItem, QGraphicsItem, QFileDialog, QMessageBox, QToolBar,
     QCheckBox, QTextEdit, QSplitter, QGraphicsTextItem, QMenu, QDialog, QVBoxLayout, QComboBox, QLabel)
-from git_reader import read_repository, read_diff, read_commit_diff
+from git_reader import read_repository
+from diff_viewer import DiffViewer
 from graph import build_graph, hide_nodes
 from layout import layout
 
@@ -231,7 +231,7 @@ class Window(QMainWindow):
     def show_commit_diff(self, source, target):
         dialog = QDialog(self)
         dialog.setWindowTitle('Diff between selected commits')
-        dialog.resize(1000, 700)
+        dialog.resize(1250, 800)
         box = QVBoxLayout(dialog)
         box.addWidget(QLabel('Compare commit trees. Choose a direction to reverse additions and deletions.'))
         combo = QComboBox()
@@ -242,11 +242,8 @@ class Window(QMainWindow):
         summary.setTextFormat(Qt.TextFormat.PlainText)
         summary.setWordWrap(True)
         box.addWidget(summary)
-        text = QTextEdit()
-        text.setReadOnly(True)
-        text.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-        text.setStyleSheet('font-family: monospace;')
-        box.addWidget(text)
+        diff = DiffViewer(self.repo)
+        box.addWidget(diff, 1)
         def refresh(*_):
             before, after = combo.currentData()
             descriptions = []
@@ -254,17 +251,14 @@ class Window(QMainWindow):
                 subject = self.repo.commits[o].message.split('\n')[0]
                 descriptions.append(f'{label}: {o}\n{subject}')
             summary.setText('\n'.join(descriptions))
-            try:
-                text.setPlainText(read_commit_diff(self.repo, before, after))
-            except (RuntimeError, OSError, ValueError, TimeoutExpired) as exc:
-                text.setPlainText(f'Cannot load diff: {exc}')
+            diff.compare(before, after)
         combo.currentIndexChanged.connect(refresh)
         refresh()
         dialog.exec()
     def show_diff(self, oid):
         dialog = QDialog(self)
         dialog.setWindowTitle(f'Diff — {oid[:12]} against parent')
-        dialog.resize(1000, 700)
+        dialog.resize(1250, 800)
         box = QVBoxLayout(dialog)
         box.addWidget(QLabel('Comparison uses the actual Git parent, including commits hidden in collapsed chains.'))
         combo = QComboBox()
@@ -274,16 +268,10 @@ class Window(QMainWindow):
         if not parents:
             combo.addItem('Empty tree (root commit)', None)
         box.addWidget(combo)
-        text = QTextEdit()
-        text.setReadOnly(True)
-        text.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-        text.setStyleSheet('font-family: monospace;')
-        box.addWidget(text)
+        diff = DiffViewer(self.repo)
+        box.addWidget(diff, 1)
         def refresh(*_):
-            try:
-                text.setPlainText(read_diff(self.repo, oid, combo.currentData()))
-            except (RuntimeError, OSError, ValueError) as exc:
-                text.setPlainText(f'Cannot load diff: {exc}')
+            diff.compare(combo.currentData(), oid)
         combo.currentIndexChanged.connect(refresh)
         refresh()
         dialog.exec()

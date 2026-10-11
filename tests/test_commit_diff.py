@@ -4,10 +4,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QTextEdit
+from PySide6.QtWidgets import QApplication, QComboBox, QDialog
 
 from git_reader import read_commit_diff, read_repository
 from viewer import Window
+from diff_viewer import DiffViewer
 
 
 class CommitDiffTest(unittest.TestCase):
@@ -54,20 +55,21 @@ class CommitDiffTest(unittest.TestCase):
             snapshots = []
 
             def inspect_dialog(dialog):
-                text = dialog.findChild(QTextEdit)
+                diff = dialog.findChild(DiffViewer)
                 combo = dialog.findChild(QComboBox)
-                snapshots.append((combo.currentData(), text.toPlainText()))
+                snapshots.append((combo.currentData(), diff.left.toPlainText(), diff.right.toPlainText()))
                 combo.setCurrentIndex(1)
-                snapshots.append((combo.currentData(), text.toPlainText()))
+                snapshots.append((combo.currentData(), diff.left.toPlainText(), diff.right.toPlainText()))
                 return 0
 
             with patch.object(QDialog, 'exec', new=inspect_dialog):
                 action.trigger()
                 app.processEvents()
             self.assertEqual(len(snapshots), 2)
-            for pair, text in snapshots:
+            for pair, left, right in snapshots:
                 self.assertEqual(set(pair), {main, side})
-                self.assertEqual(text, forward if pair == (main, side) else reverse)
+                self.assertEqual(left, 'main' if pair == (main, side) else 'side')
+                self.assertEqual(right, 'side' if pair == (main, side) else 'main')
             self.assertEqual(snapshots[0][0], tuple(reversed(snapshots[1][0])))
             self.assertEqual(len(window.scene.selectedItems()), 2)
             window.nodes[root].setSelected(True)
