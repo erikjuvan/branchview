@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QEvent
 from dataclasses import replace
 from urllib.parse import urlsplit, parse_qs
 import re
@@ -19,6 +19,7 @@ from commit_browser import CommitBrowser
 from vscode_open import SnapshotOpenDialog
 from branch_panel import BranchPanel
 from branch_colors import remote_name, remote_color
+from repository_status_panel import RepositoryStatusPanel
 
 class View(QGraphicsView):
     def __init__(self, scene):
@@ -299,6 +300,8 @@ class Window(QMainWindow):
         sidebar_layout = QVBoxLayout(self.sidebar)
         sidebar_layout.setContentsMargins(0, 0, 0, 0)
         sidebar_layout.setSpacing(0)
+        self.repository_status = RepositoryStatusPanel(self)
+        sidebar_layout.addWidget(self.repository_status, 0, Qt.AlignmentFlag.AlignTop)
         sidebar_layout.addWidget(self.shortcuts_panel, 0, Qt.AlignmentFlag.AlignTop)
         self.branch_panel = BranchPanel()
         self.branch_panel.branch_clicked.connect(self.jump_to_branch)
@@ -399,6 +402,7 @@ class Window(QMainWindow):
         self.preserve_view = preserve_view
         self.pending_path = path
         self.loading = True
+        self.repository_status.refresh(path)
         self.cancel_action.setEnabled(True)
         self.statusBar().showMessage(f'Loading {path}…')
         self.update_history_controls()
@@ -454,6 +458,8 @@ class Window(QMainWindow):
         self.preserve_view = False
         self.cancel_action.setEnabled(False)
         self.restore_load_options()
+        if self.repo:
+            self.repository_status.refresh(self.repo.path)
         self.statusBar().showMessage('Load canceled · previous view retained' if self.repo else 'Load canceled · Open a repository to try again')
         handler = getattr(self, 'load_cancel_handler', None)
         if handler is not None:
@@ -464,6 +470,8 @@ class Window(QMainWindow):
         self.preserve_view = False
         self.cancel_action.setEnabled(False)
         self.restore_load_options()
+        if self.repo:
+            self.repository_status.refresh(self.repo.path)
         self.statusBar().showMessage('Repository loading failed')
         handler = getattr(self, 'load_error_handler', None)
         if handler is not None:
@@ -522,6 +530,14 @@ class Window(QMainWindow):
         path = self.pending_path if self.loading else self.repo.path if self.repo else getattr(self, 'repository_path', None)
         if path:
             self.load(path)
+    def refresh_status(self):
+        path = self.pending_path if self.loading else self.repo.path if self.repo else getattr(self, 'repository_path', None)
+        self.repository_status.refresh(path)
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.ActivationChange and self.isActiveWindow() and self.open_callback is None:
+            if hasattr(self, 'repository_status'):
+                self.refresh_status()
     def collapse(self):
         self.expanded.clear()
         self.render()
@@ -916,6 +932,7 @@ class Window(QMainWindow):
         super().closeEvent(event)
     def shutdown(self):
         self.loader.cancel()
+        self.repository_status.shutdown()
         self.details.cancel_pending()
         if self.search_dialog is not None:
             self.search_dialog.close()

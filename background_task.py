@@ -42,7 +42,13 @@ class BackgroundTask(QObject):
         self.jobs = {}
         self.active = None
         if parent is not None:
-            parent.destroyed.connect(self.cancel)
+            # QObject teardown can outlive this object's Python attributes.
+            # Retain the cancellation flags without retaining the Qt receiver.
+            jobs = self.jobs
+            def cancel_jobs(*_):
+                for job in jobs.values():
+                    job.cancelled.set()
+            parent.destroyed.connect(cancel_jobs)
 
     def start(self, operation):
         self.cancel()

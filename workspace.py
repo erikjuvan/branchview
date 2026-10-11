@@ -2,7 +2,7 @@
 import os
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QEvent
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QMainWindow, QTabWidget, QToolBar, QDialog, QMessageBox
 
@@ -215,6 +215,14 @@ class WorkspaceWindow(QMainWindow):
             page.load_toolbar.show()
             self.mounted_page = page
             page.view.setFocus()
+            page.refresh_status()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.ActivationChange and self.isActiveWindow() and hasattr(self, 'tabs'):
+            page = self.tabs.currentWidget()
+            if page:
+                page.refresh_status()
 
     def cycle_tab(self, direction):
         if self.tabs.count():
