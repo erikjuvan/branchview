@@ -72,7 +72,7 @@ class Node(QGraphicsEllipseItem):
         self.display_id = display_id or oid
         self.window = window
         self.tip = tip
-        self.checked_out = any(wt.active and wt.head == oid for wt in window.repo.worktrees) if window.repo else False
+        self.checked_out = (oid == window.repo.head_oid or any(wt.active and wt.head == oid for wt in window.repo.worktrees)) if window.repo else False
         names = window.repo.branches.get(oid, []) if window.repo else []
         remotes = [remote_name(window.repo, name) for name in names]
         self.base_color = (remote_color(sorted(remotes)[0]) if remotes and all(remotes) else
@@ -668,7 +668,7 @@ class Window(QMainWindow):
             self.view.scale(1.5/self.view.transform().m11(), 1.5/self.view.transform().m11())
             self.view.centerOn(bounds.center())
     def jump_to_branch(self, name, oid):
-        if not self.repo or name not in self.repo.branches.get(oid, []):
+        if not self.repo or oid not in self.repo.ref_tips:
             return
         if oid not in self.nodes:
             self.expanded.add(oid)
@@ -768,6 +768,9 @@ class Window(QMainWindow):
             positions.update({oid: xy for oid, xy in self.manual_positions.items() if oid in graph.nodes})
         text_x = max((x for x, y in positions.values()), default=0)+32
         shared_copies = {graph.commit_oid(entry) for entry in graph.included_tips}
+        tag_names = defaultdict(list)
+        for name, oid in self.repo.tags.items():
+            tag_names[oid].append(name)
         for display_id,(x,y) in positions.items():
             oid = graph.commit_oid(display_id)
             commit = self.repo.commits[oid]
@@ -798,8 +801,16 @@ class Window(QMainWindow):
                 note.setPos(12, 28 if self.repo.history_limited and any(p not in self.repo.commits for p in commit.parents) else 10)
                 self.labels.append(note)
             checkouts = [wt for wt in self.repo.worktrees if wt.active and wt.head == oid]
-            if display_id in graph.tips or ((checkouts or oid in self.repo.branches) and not (self.repo.all_branch_tips and oid in shared_copies)):
+            if display_id in graph.tips or ((checkouts or oid in self.repo.ref_tips) and not (self.repo.all_branch_tips and oid in shared_copies)):
                 titles = []
+                if oid == self.repo.head_oid:
+                    title = NodeLabel('HEAD' if self.repo.head_ref else 'HEAD (detached)', node)
+                    title.worktree_badge = True
+                    title.ref_badge = regular
+                    title.base_color = QColor('#c792ea')
+                    title.setDefaultTextColor(title.base_color)
+                    title.setToolTip('Current checkout: '+self.repo.path+'\n'+(self.repo.head_ref or 'Detached HEAD')+'\n'+oid)
+                    titles.append(title)
                 for name in self.repo.branches.get(oid, []):
                     trees = [wt for wt in checkouts if wt.branch == self.repo.branch_refs.get(name, 'refs/heads/'+name)]
                     included = display_id in graph.included_tips
@@ -820,6 +831,13 @@ class Window(QMainWindow):
                     if remote is not None:
                         tooltip += '\nRemote: '+remote
                     title.setToolTip(tooltip.strip())
+                    titles.append(title)
+                for name in tag_names[oid]:
+                    title = NodeLabel('tag: '+name, node)
+                    title.ref_badge = regular
+                    title.base_color = QColor('#d8ab65')
+                    title.setDefaultTextColor(title.base_color)
+                    title.setToolTip('refs/tags/'+name+'\n'+oid)
                     titles.append(title)
                 detached = [wt for wt in checkouts if wt.detached]
                 if detached:
@@ -862,7 +880,7 @@ class Window(QMainWindow):
         self.statusBar().showMessage(f'{self.repo.path} · {len(graph.nodes) if regular else len(graph.tips)} {mode} · {len(self.repo.commits)} loaded commits{suffix}')
         self.setWindowTitle(f'Git Branch Viewer — {self.repo.path}')
         if not graph.tips:
-            self.details.setPlainText('No branch tips found. Empty repositories and detached commits without branch references are not displayed.')
+            self.details.setPlainText('No commit refs found. This repository has no commits yet.')
         if update_shortcuts:
             self.shortcuts_panel.update_context(self)
     def inspect(self):

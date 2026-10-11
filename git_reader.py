@@ -68,6 +68,17 @@ class Repository:
     remote_names: tuple[str, ...] = ()
     regular_history: bool = False
     commit_timestamps: dict[str, int] = field(default_factory=dict)
+    head_oid: str | None = None
+    head_ref: str | None = None
+    tags: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def ref_tips(self):
+        return set(self.branches) | set(self.tags.values()) | ({self.head_oid} if self.head_oid else set())
+
+    def tip_name(self, oid):
+        return (self.branches[oid][0] if oid in self.branches else
+                next((name for name, target in self.tags.items() if target == oid), 'HEAD'))
 
 def read_repository(path: str, remote: bool = False, branches_only: bool = False,
                     cancelled=None, progress=None, commit_limit: int | None = None,
@@ -91,18 +102,41 @@ def read_repository(path: str, remote: bool = False, branches_only: bool = False
         if not symbolic:
             branches.setdefault(oid, []).append(name)
             branch_refs[name] = ref
+    report('Reading HEAD and tags')
+    try:
+        head_oid = git('rev-parse', '--verify', '--quiet', 'HEAD^{commit}').strip()
+    except RuntimeError:
+        head_oid = None  # Empty repositories have an unborn HEAD.
+    try:
+        head_ref = git('symbolic-ref', '--quiet', 'HEAD').strip()
+    except RuntimeError:
+        head_ref = None  # Detached HEAD.
+    tags = {}
+    for line in git('for-each-ref', '--format=%(refname)%09%(objectname)%09%(*objectname)%09%(objecttype)%09%(*objecttype)',
+                    'refs/tags').splitlines():
+        ref, oid, peeled, kind, peeled_kind = line.split('\t')
+        if kind == 'commit':
+            tags[ref.removeprefix('refs/tags/')] = oid
+        elif peeled_kind == 'commit':
+            tags[ref.removeprefix('refs/tags/')] = peeled
+        elif peeled_kind == 'tag':
+            try:
+                tags[ref.removeprefix('refs/tags/')] = git('rev-parse', '--verify', ref+'^{commit}').strip()
+            except RuntimeError:
+                pass  # Tags of trees/blobs have no commit to navigate to.
+    tips = set(branches) | set(tags.values()) | ({head_oid} if head_oid else set())
     commits = {}
     timestamps = {}
     truncated = False
-    if branches:
+    if tips:
         # NUL fields avoid ambiguity from whitespace and multiline messages.
         ordering = ['--no-walk=sorted'] if branches_only else ['--date-order' if regular_history else '--topo-order']
         if commit_limit is not None and not branches_only:
             ordering.append(f'--max-count={commit_limit+1}')
-        report('Reading branch tips' if branches_only else 'Reading commit history')
+        report('Reading ref tips' if branches_only else 'Reading commit history')
         output = git('log', *ordering, '--no-show-signature',
                      '--format=%H%x00%P%x00%an%x00%aI%x00%B%x00%ct%x00', '--stdin',
-                     input_bytes=('\n'.join(branches)+'\n').encode())
+                     input_bytes=('\n'.join(sorted(tips))+'\n').encode())
         fields = output.split('\0')
         for i in range(0, len(fields)-1, 6):
             if cancelled is not None and cancelled.is_set():
@@ -114,10 +148,10 @@ def read_repository(path: str, remote: bool = False, branches_only: bool = False
                 break
             commits[oid] = Commit(oid, tuple(parents.split()), author, date, message.strip())
             timestamps[oid] = int(timestamp)
-        # A global history budget must never remove an older branch head.
-        missing_tips = set(branches)-commits.keys()
+        # A global history budget must retain every ref tip.
+        missing_tips = tips-commits.keys()
         if missing_tips:
-            report('Reading remaining branch tips')
+            report('Reading remaining ref tips')
             tip_fields = git('log', '--no-walk=sorted', '--no-show-signature',
                              '--format=%H%x00%P%x00%an%x00%aI%x00%B%x00%ct%x00', '--stdin',
                              input_bytes=('\n'.join(sorted(missing_tips))+'\n').encode()).split('\0')
@@ -133,7 +167,8 @@ def read_repository(path: str, remote: bool = False, branches_only: bool = False
     worktrees = read_worktrees(path, cancelled=cancelled)
     return Repository(path, commits, branches, git('rev-parse', '--is-shallow-repository').strip() == 'true',
                       branches_only, commit_limit, incomplete, worktrees, branch_refs, all_branch_tips,
-                      tuple(git('remote').splitlines()) if remote else (), regular_history, timestamps)
+                      tuple(git('remote').splitlines()) if remote else (), regular_history, timestamps,
+                      head_oid, head_ref, tags)
 
 def read_diff(repo: Repository, oid: str, parent: str | None) -> str:
     """Compare a commit to an actual parent (or empty tree for a root)."""

@@ -53,11 +53,14 @@ larger initial budget or `--max-commits 0` for all history.
   manual node arrangements remain available in the other presentations.
   CLI: `--presentation regular|terminal|all`; `--all-branch-tips` still selects all.
 
-- The right sidebar lists all loaded named branches, including remote branches
-  when **Include remote branches** is enabled. Filter by name, then click a branch
-  (or select it and press Enter) to reveal its tip, select it and zoom to a readable
-  view. Hidden or collapsed tips are revealed. Drag the divider between the list
-  and commit details to adjust their heights.
+- The right sidebar has **All refs**, **Branches**, and **Tags** tabs with a shared
+  name filter. All refs pins **HEAD** first, showing the current branch or detached
+  state for the checkout open in this repository tab. The current branch is bold;
+  HEAD is purple and tags are gold. Remote branches follow **Include remote branches**.
+  Click a ref (or select it and press Enter) to reveal its commit and zoom to a
+  readable view. Hidden or collapsed commits are revealed. The graph marks the
+  current checkout with **HEAD** and shows tag names beside their commits.
+  Drag the divider between the list and commit details to adjust their heights.
 - Remote branch labels and remote-only branch nodes use muted green/teal shades,
   with a stable shade for each remote. The sidebar uses the same colors. Local
   branches retain blue; worktree labels retain purple. Remote label colors remain
@@ -170,9 +173,11 @@ larger initial budget or `--max-commits 0` for all history.
   budget while retaining zoom, pan, selection, expansion, and manual positions.
   Boundary labels and the status bar identify missing history; ancestry and
   terminal-tip filtering are approximate until the missing history is loaded.
-- Local branches by default; optionally include remote-tracking branches.
+- Local branches, HEAD and commit tags by default; optionally include remote-tracking branches.
+  Annotated tags resolve to their commits. Tags of trees or blobs are omitted.
+  HEAD and tag commits remain loaded even when outside the history budget.
 - Branches only: show every branch tip in a compact grid, with no ancestor nodes
-  or ancestry edges. This also includes branches pointing to ancestors of other
+  or ancestry edges, plus HEAD and tag commits. This also includes branches pointing to ancestors of other
   branch tips. Names sharing a commit are grouped. Git loads only tip metadata;
   parent diffs and comparisons between two tips remain available. Turn it off to
   load the full history. Manual layouts are retained separately for each mode.
@@ -212,8 +217,8 @@ Disconnected histories remain separate. Shallow repositories show a warning:
 terminal detection can only use available history.
 
 The application only reads Git data. It does not fetch, checkout, merge, or
-write repository files. Uncommitted changes, tags, and detached-only commits
-are outside the scope of this first version. History mode loads a bounded slice
+write repository files. Uncommitted changes are outside the scope of this viewer.
+Detached HEAD commits and commit tags are included. History mode loads a bounded slice
 by default. Branch-only mode avoids history traversal. Layout is deterministic,
 but merge edges can cross and long labels can overlap in complicated histories.
 

@@ -100,7 +100,8 @@ class BranchPanelTest(unittest.TestCase):
             try:
                 wait_for_load(window)
                 panel = window.branch_panel
-                self.assertEqual({panel.list.item(i).text() for i in range(panel.list.count())}, {'main', 'merged-old'})
+                self.assertEqual({panel.list.item(i).text() for i in range(panel.list.count())
+                                  if not panel.list.item(i).isHidden()}, {'HEAD → main', 'main', 'merged-old'})
                 self.assertNotIn(middle, window.nodes)
                 item = next(panel.list.item(i) for i in range(panel.list.count()) if panel.list.item(i).text() == 'merged-old')
                 panel.activate(item)
@@ -119,7 +120,7 @@ class BranchPanelTest(unittest.TestCase):
                 self.assertEqual([panel.list.item(i).text() for i in range(panel.list.count()) if not panel.list.item(i).isHidden()], ['origin/main'])
                 window.remote.setChecked(False)
                 wait_for_load(window)
-                self.assertEqual(panel.list.count(), 2)
+                self.assertEqual(panel.list.count(), 3)
             finally:
                 window.close()
                 application.processEvents()

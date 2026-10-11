@@ -28,7 +28,7 @@ class Graph:
 
 def terminal_tips(repo: Repository, cancelled=None) -> list[str]:
     ancestors = set()
-    for tip in repo.branches:
+    for tip in repo.ref_tips:
         check_cancelled(cancelled)
         todo = list(repo.commits[tip].parents)
         visited = set()
@@ -40,12 +40,12 @@ def terminal_tips(repo: Repository, cancelled=None) -> list[str]:
             visited.add(oid)
             todo.extend(repo.commits[oid].parents)
         ancestors.update(visited)
-    return sorted(set(repo.branches)-ancestors, key=lambda oid: repo.branches[oid][0])
+    return sorted(repo.ref_tips-ancestors, key=repo.tip_name)
 
 def build_graph(repo: Repository, expanded: set[str] | None = None, cancelled=None) -> Graph:
     check_cancelled(cancelled)
     if repo.branches_only:
-        tips = sorted(repo.branches, key=lambda oid: repo.branches[oid][0])
+        tips = sorted(repo.ref_tips, key=repo.tip_name)
         return Graph(set(tips), tips, [])
     if repo.regular_history:
         edges = [Edge(oid, parent, ()) for oid, commit in repo.commits.items()
@@ -90,6 +90,9 @@ def build_graph(repo: Repository, expanded: set[str] | None = None, cancelled=No
     if repo.all_branch_tips:
         keep.update(repo.branches)
     keep.update(wt.head for wt in repo.worktrees if wt.active and wt.head in reachable)
+    keep.update(set(repo.tags.values()) & reachable)
+    if repo.head_oid in reachable:
+        keep.add(repo.head_oid)
     for oid in reachable:
         check_cancelled(cancelled)
         parents = [p for p in repo.commits[oid].parents if p in reachable]
@@ -128,6 +131,7 @@ def build_graph(repo: Repository, expanded: set[str] | None = None, cancelled=No
             else:
                 included.add(entry)
                 edges.extend(Edge(entry, edge.parent, edge.hidden) for edge in originals if edge.child == oid)
+        top.extend(oid for oid in tips if oid not in repo.branches)
         return Graph(keep, top, edges, commit_ids, included)
     return Graph(keep, tips, edges)
 
