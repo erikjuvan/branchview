@@ -11,6 +11,7 @@ from viewer import Window
 from folder_open_dialog import FolderOpenDialog
 from repository_scan import RepositoryScanner
 from vscode_open import SnapshotCacheDialog
+from theme import apply_dark_theme
 
 
 def path_key(path):
@@ -21,7 +22,7 @@ class WorkspaceWindow(QMainWindow):
     def __init__(self, path=None, recursive=False, **options):
         super().__init__()
         self.options = options
-        self.setStyleSheet('QMainWindow, QTabWidget, QTabBar { background: #252526; color: #cccccc; } '
+        apply_dark_theme(self, 'QMainWindow, QTabWidget, QTabBar { background: #252526; color: #cccccc; } '
                            'QTabWidget::pane { border: 1px solid #3c3c3c; } '
                            'QTabBar::tab { background: #2d2d30; color: #969696; padding: 7px 14px; } '
                            'QTabBar::tab:selected { background: #1e1e1e; color: #cccccc; } '

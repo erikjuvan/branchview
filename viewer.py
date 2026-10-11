@@ -20,6 +20,7 @@ from vscode_open import SnapshotOpenDialog
 from branch_panel import BranchPanel
 from branch_colors import remote_name, remote_color
 from repository_status_panel import RepositoryStatusPanel
+from theme import apply_dark_theme
 
 class View(QGraphicsView):
     def __init__(self, scene):
@@ -249,7 +250,7 @@ class Window(QMainWindow):
         self.loader.ready.connect(self.apply_repository)
         self.loader.failed.connect(self.load_failed)
         self.loader.progress.connect(self.load_progress)
-        self.setStyleSheet("""
+        apply_dark_theme(self, """
             QMainWindow, QWidget { background: #252526; color: #cccccc; }
             QGraphicsView { background: #1e1e1e; border: 1px solid #3c3c3c; }
             QTextEdit { background: #252526; color: #cccccc; border: 1px solid #3c3c3c; }
