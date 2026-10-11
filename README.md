@@ -53,13 +53,20 @@ larger initial budget or `--max-commits 0` for all history.
   manual node arrangements remain available in the other presentations.
   CLI: `--presentation regular|terminal|all`; `--all-branch-tips` still selects all.
 
-- The right sidebar has **All refs**, **Branches**, and **Tags** tabs with a shared
+- The right sidebar has **All refs**, **Branches**, **Tags**, and **Worktrees** tabs with a shared
   name filter. All refs pins **HEAD** first, showing the current branch or detached
   state for the checkout open in this repository tab. The current branch is bold;
   HEAD is purple and tags are gold. Remote branches follow **Include remote branches**.
   Click a ref (or select it and press Enter) to reveal its commit and zoom to a
   readable view. Hidden or collapsed commits are revealed. The graph marks the
   current checkout with **HEAD** and shows tag names beside their commits.
+  Checked-out branches have purple **[WT]** badges; **[WT · here]** identifies the
+  opened checkout. Tooltips show worktree paths, main/linked status and lock reasons.
+  The Worktrees tab lists folders and checked-out branches, including detached HEADs;
+  search also matches their paths. Click an active worktree to reveal its HEAD.
+  Prunable, bare and empty entries are labelled and cannot be activated.
+  Commit details place exact checkouts in purple cards beneath the commit heading,
+  with ancestry relationships in a separate **In worktree history** section.
   Drag the divider between the list and commit details to adjust their heights.
 - Remote branch labels and remote-only branch nodes use muted green/teal shades,
   with a stable shade for each remote. The sidebar uses the same colors. Local
@@ -175,7 +182,7 @@ larger initial budget or `--max-commits 0` for all history.
   terminal-tip filtering are approximate until the missing history is loaded.
 - Local branches, HEAD and commit tags by default; optionally include remote-tracking branches.
   Annotated tags resolve to their commits. Tags of trees or blobs are omitted.
-  HEAD and tag commits remain loaded even when outside the history budget.
+  HEAD, tag commits and active worktree HEADs remain loaded even when outside the history budget.
 - Branches only: show every branch tip in a compact grid, with no ancestor nodes
   or ancestry edges, plus HEAD and tag commits. This also includes branches pointing to ancestors of other
   branch tips. Names sharing a commit are grouped. Git loads only tip metadata;

@@ -120,7 +120,8 @@ class BranchPanelTest(unittest.TestCase):
                 self.assertEqual([panel.list.item(i).text() for i in range(panel.list.count()) if not panel.list.item(i).isHidden()], ['origin/main'])
                 window.remote.setChecked(False)
                 wait_for_load(window)
-                self.assertEqual(panel.list.count(), 3)
+                panel.filter.clear()
+                self.assertEqual(sum(not panel.list.item(i).isHidden() for i in range(panel.list.count())), 3)
             finally:
                 window.close()
                 application.processEvents()

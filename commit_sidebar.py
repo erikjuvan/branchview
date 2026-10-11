@@ -1,6 +1,7 @@
 """Rich commit details with cancellable background queries and a session cache."""
 from collections import OrderedDict
 from html import escape
+from pathlib import Path
 from threading import Event
 from urllib.parse import urlencode
 
@@ -24,7 +25,7 @@ def commit_link(oid, subject='', history=False):
 def section(title, body):
     return f'<h3>{escape(title)}</h3>{body}'
 
-def worktree_html(wt, relation, opened=False):
+def worktree_html(wt, relation, opened=False, highlight=False):
     location = 'Main worktree' if wt.main else 'Linked worktree'
     if opened:
         location += ' · opened here'
@@ -34,8 +35,22 @@ def worktree_html(wt, relation, opened=False):
         notes.append('Locked'+(': '+wt.locked if wt.locked else ''))
     if wt.prunable is not None:
         notes.append('Prunable'+(': '+wt.prunable if wt.prunable else ''))
-    return (f'<p><b>{escape(location)} · {escape(branch)}</b><br>{escape(wt.path)}<br>'
-            f'{escape(relation)}'+('<br>'+escape(' · '.join(notes)) if notes else '')+'</p>')
+    folder = Path(wt.path).name or wt.path
+    badge = '<span style="color: #c792ea"><b>'+('[WT · here]' if opened else '[WT]')+'</b></span> ' if highlight else ''
+    body = (f'<p>{badge}<b>{escape(branch)} — {escape(folder)}</b><br>{escape(location)}<br>{escape(wt.path)}<br>'
+            f'{escape(relation)}<br>HEAD: '+commit_link(wt.head)
+            +('<br>'+escape(' · '.join(notes)) if notes else '')+'</p>')
+    return '<table width="100%" bgcolor="#302638" cellpadding="8"><tr><td>'+body+'</td></tr></table>' if highlight else body
+
+
+def checkout_section(checkouts):
+    if not checkouts:
+        return '<p style="color: #969696">No active worktree is checked out at this commit.</p>'
+    ordered = sorted(checkouts, key=lambda entry: (not entry[1], entry[0].path.casefold()))
+    count = len(ordered)
+    title = f'Checked out in {count} worktree'+('s' if count != 1 else '')
+    return (f'<h3 style="color: #c792ea">{title}</h3>'
+            + ''.join(worktree_html(wt, 'HEAD is this commit', opened, highlight=True) for wt, opened in ordered))
 
 
 def list_html(items, limit=80):
@@ -48,16 +63,15 @@ def list_html(items, limit=80):
 
 def render_basic(commit, branches, repo=None):
     subject = commit.message.split('\n')[0]
-    body = (f'<h2>{escape(subject)}</h2>'
-            f'<p>Commit: {escape(commit.oid)}<br>'
+    body = f'<h2>{escape(subject)}</h2>'
+    if repo is not None:
+        opened = opened_worktree(repo.path, repo.worktrees)
+        body += checkout_section([(wt, wt == opened) for wt in repo.worktrees if wt.active and wt.head == commit.oid])
+    body += (f'<p>Commit: {escape(commit.oid)}<br>'
             f'Branches pointing here: {escape(", ".join(branches)) or "None"}<br>'
             f'Author: {escape(commit.author)}<br>Date: {escape(commit.date)}</p>'
             + section('Parents', list_html(commit_link(p) for p in commit.parents) if commit.parents else 'Root commit')
             + section('Message', f'<pre style="white-space: pre-wrap">{escape(commit.message)}</pre>'))
-    if repo is not None:
-        heads = [wt for wt in repo.worktrees if wt.head == commit.oid and not wt.bare]
-        body += section('Worktree HEAD checkouts', ''.join(worktree_html(wt, 'HEAD is this commit') for wt in heads)
-                        or 'No worktree HEAD points here. Checking worktree ancestry…')
     return body
 
 
@@ -65,7 +79,10 @@ def render_info(info):
     c = info.commit
     subject = c.message.split('\n')[0]
     kind = 'Merge commit' if len(c.parents) > 1 else 'Root commit' if not c.parents else 'Ordinary commit'
-    body = (f'<h2>{escape(subject)}</h2><p>{kind}<br>Commit: {escape(c.oid)}</p>'
+    checkouts = [(match.worktree, match.opened) for match in info.worktrees
+                 if match.worktree.active and match.worktree.head == c.oid]
+    body = (f'<h2>{escape(subject)}</h2>'+checkout_section(checkouts)
+            + f'<p>{kind}<br>Commit: {escape(c.oid)}</p>'
             f'<p>Author: {escape(c.author)} &lt;{escape(info.author_email)}&gt;<br>'
             f'Authored: {escape(c.date)}<br>'
             f'Committer: {escape(info.committer)} &lt;{escape(info.committer_email)}&gt;<br>'
@@ -88,9 +105,14 @@ def render_info(info):
         body += '<p>Inclusion can result from a merge, fast-forward, or shared branch history. Branch names shown are current references.</p>'
     body += section('Contained in branches', list_html(escape(ref) for ref in info.branches))
     body += section('Contained in tags', list_html(escape(tag) for tag in info.tags))
-    body += section('Worktree checkouts and history', ''.join(worktree_html(match.worktree, match.relation, match.opened)
-                                                            for match in info.worktrees)
-                    or 'No matching worktree checkout or ancestry found in available history.')
+    history = [match for match in info.worktrees if match.worktree.active and match.worktree.head != c.oid]
+    body += section('In worktree history', ''.join(worktree_html(match.worktree, match.relation, match.opened)
+                                                 for match in sorted(history, key=lambda m: (not m.opened, m.worktree.path.casefold())))
+                    or 'No related worktree history found.')
+    recorded = [match for match in info.worktrees if not match.worktree.active]
+    if recorded:
+        body += section('Recorded worktree checkouts', ''.join(worktree_html(match.worktree, match.relation, match.opened)
+                                                               for match in recorded))
     parents = []
     for index, oid in enumerate(c.parents):
         role = ('Destination-side parent (first parent)' if index == 0 else f'Incoming parent {index}') if len(c.parents) > 1 else 'Parent'
@@ -166,7 +188,7 @@ def render_selection(repo, selected, cache):
             description.append('HEAD is selected')
         if ancestors:
             description.append(f'{ancestors} selected ancestor'+('s' if ancestors != 1 else '')+' in loaded history')
-        tree_summaries.append(worktree_html(wt, ' · '.join(description), wt == opened))
+        tree_summaries.append(worktree_html(wt, ' · '.join(description), wt == opened, highlight=wt.head in selected))
         for oid in matches:
             relationships[oid].append(('HEAD' if oid == wt.head else 'ancestor')+': '+wt.path)
     body += section('Worktrees related to selection', ''.join(tree_summaries) or 'No matches in loaded history.')

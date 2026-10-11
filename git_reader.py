@@ -74,7 +74,8 @@ class Repository:
 
     @property
     def ref_tips(self):
-        return set(self.branches) | set(self.tags.values()) | ({self.head_oid} if self.head_oid else set())
+        return (set(self.branches) | set(self.tags.values()) | ({self.head_oid} if self.head_oid else set())
+                | {wt.head for wt in self.worktrees if wt.active})
 
     def tip_name(self, oid):
         return (self.branches[oid][0] if oid in self.branches else
@@ -124,7 +125,10 @@ def read_repository(path: str, remote: bool = False, branches_only: bool = False
                 tags[ref.removeprefix('refs/tags/')] = git('rev-parse', '--verify', ref+'^{commit}').strip()
             except RuntimeError:
                 pass  # Tags of trees/blobs have no commit to navigate to.
-    tips = set(branches) | set(tags.values()) | ({head_oid} if head_oid else set())
+    report('Reading worktree checkouts')
+    worktrees = read_worktrees(path, cancelled=cancelled)
+    tips = (set(branches) | set(tags.values()) | ({head_oid} if head_oid else set())
+            | {wt.head for wt in worktrees if wt.active})
     commits = {}
     timestamps = {}
     truncated = False
@@ -133,7 +137,7 @@ def read_repository(path: str, remote: bool = False, branches_only: bool = False
         ordering = ['--no-walk=sorted'] if branches_only else ['--date-order' if regular_history else '--topo-order']
         if commit_limit is not None and not branches_only:
             ordering.append(f'--max-count={commit_limit+1}')
-        report('Reading ref tips' if branches_only else 'Reading commit history')
+        report('Reading ref and worktree tips' if branches_only else 'Reading commit history')
         output = git('log', *ordering, '--no-show-signature',
                      '--format=%H%x00%P%x00%an%x00%aI%x00%B%x00%ct%x00', '--stdin',
                      input_bytes=('\n'.join(sorted(tips))+'\n').encode())
@@ -148,10 +152,10 @@ def read_repository(path: str, remote: bool = False, branches_only: bool = False
                 break
             commits[oid] = Commit(oid, tuple(parents.split()), author, date, message.strip())
             timestamps[oid] = int(timestamp)
-        # A global history budget must retain every ref tip.
+        # A global history budget must retain every ref and active worktree HEAD.
         missing_tips = tips-commits.keys()
         if missing_tips:
-            report('Reading remaining ref tips')
+            report('Reading remaining ref and worktree tips')
             tip_fields = git('log', '--no-walk=sorted', '--no-show-signature',
                              '--format=%H%x00%P%x00%an%x00%aI%x00%B%x00%ct%x00', '--stdin',
                              input_bytes=('\n'.join(sorted(missing_tips))+'\n').encode()).split('\0')
@@ -163,8 +167,6 @@ def read_repository(path: str, remote: bool = False, branches_only: bool = False
                 commits[oid] = Commit(oid, tuple(parents.split()), author, date, message.strip())
                 timestamps[oid] = int(timestamp)
     incomplete = truncated and any(p not in commits for c in commits.values() for p in c.parents)
-    report('Reading worktree checkouts')
-    worktrees = read_worktrees(path, cancelled=cancelled)
     return Repository(path, commits, branches, git('rev-parse', '--is-shallow-repository').strip() == 'true',
                       branches_only, commit_limit, incomplete, worktrees, branch_refs, all_branch_tips,
                       tuple(git('remote').splitlines()) if remote else (), regular_history, timestamps,
