@@ -41,6 +41,14 @@ larger initial budget or `--max-commits 0` for all history.
 
 ## Controls
 
+- The top of the right sidebar summarizes the current checkout: branch or detached
+  HEAD, upstream and locally known ahead/behind counts, staged/unstaged/untracked
+  file counts, conflicts, and operations in progress. A file with both staged and
+  unstaged edits counts in both categories; conflicts are counted separately.
+  Status reads run independently in the background on open, Refresh, tab activation,
+  and returning to the app. Previous status is marked while refreshing or if a read
+  fails. No fetch or patch read is performed. Bare repositories show no working tree.
+
 - **View** selects three history presentations. **Regular history** is the default:
   newest commits first, one commit per row with compact connecting lanes and
   inline branch labels. Committer dates order independent histories, with parents
@@ -224,8 +232,9 @@ Disconnected histories remain separate. Shallow repositories show a warning:
 terminal detection can only use available history.
 
 The application only reads Git data. It does not fetch, checkout, merge, or
-write repository files. Uncommitted changes are outside the scope of this viewer.
-Detached HEAD commits and commit tags are included. History mode loads a bounded slice
+write repository files. Uncommitted changes have a compact checkout summary;
+working-tree diffs are outside the scope of this viewer. Detached HEAD commits
+and commit tags are included. History mode loads a bounded slice
 by default. Branch-only mode avoids history traversal. Layout is deterministic,
 but merge edges can cross and long labels can overlap in complicated histories.
 
