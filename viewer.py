@@ -49,9 +49,11 @@ class View(QGraphicsView):
             self.scale(target / current, target / current)
         event.accept()
     def fit(self):
+        self.fit_bounds(self.scene().itemsBoundingRect())
+    def fit_bounds(self, bounds):
         # Bounds change only on explicit fit or redraw, never during a drag.
         self.scene().setSceneRect(self.scene().itemsBoundingRect().adjusted(-1000,-1000,1000,1000))
-        self.fitInView(self.scene().itemsBoundingRect().adjusted(-50,-50,50,50), Qt.AspectRatioMode.KeepAspectRatio)
+        self.fitInView(bounds.adjusted(-50,-50,50,50), Qt.AspectRatioMode.KeepAspectRatio)
 
 class Node(QGraphicsEllipseItem):
     def __init__(self, oid, x, y, tip, window):
@@ -199,6 +201,9 @@ class Window(QMainWindow):
         self.fit_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Space), self)
         self.fit_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
         self.fit_shortcut.activated.connect(self.view.fit)
+        self.top_shortcut = QShortcut(QKeySequence(Qt.Key.Key_T), self)
+        self.top_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+        self.top_shortcut.activated.connect(self.fit_top_commits)
         self.hide_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Delete), self.view)
         self.hide_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self.hide_shortcut.activated.connect(self.hide_selected_nodes)
@@ -210,7 +215,7 @@ class Window(QMainWindow):
         self.diff_shortcut.activated.connect(self.diff_selected_nodes)
         self.details = QTextEdit()
         self.details.setReadOnly(True)
-        self.details.setPlainText('Open a Git repository.\n\nWheel: zoom\nDrag background: select multiple · middle-drag: pan\nDrag a node or its label: rearrange\nR: rearrange visible nodes\nD: diff one or two selected commits\nDelete: hide selected nodes\nClick a commit: inspect\nDouble-click a chain label: expand\n\nVertical position represents ancestry, not time.')
+        self.details.setPlainText('Open a Git repository.\n\nWheel: zoom\nDrag background: select multiple · middle-drag: pan\nDrag a node or its label: rearrange\nT: jump to and fit top commits\nR: rearrange visible nodes\nD: diff one or two selected commits\nDelete: hide selected nodes\nClick a commit: inspect\nDouble-click a chain label: expand\n\nVertical position represents ancestry, not time.')
         splitter = QSplitter()
         splitter.addWidget(self.view)
         splitter.addWidget(self.details)
@@ -219,7 +224,8 @@ class Window(QMainWindow):
         toolbar = QToolBar()
         self.addToolBar(toolbar)
         for name, callback in [('Open…', self.open), ('Refresh', self.refresh),
-                               ('Fit', self.view.fit), ('Rearrange visible nodes', self.rearrange_visible), ('Collapse all', self.collapse),
+                               ('Fit', self.view.fit), ('Top commits', self.fit_top_commits),
+                               ('Rearrange visible nodes', self.rearrange_visible), ('Collapse all', self.collapse),
                                ('Show hidden nodes', self.show_hidden_nodes)]:
             toolbar.addAction(name, callback)
         self.remote = QCheckBox('Include remote branches')
@@ -258,6 +264,7 @@ class Window(QMainWindow):
                        if repo.branches_only else
                        'History view: vertical position represents ancestry, not time.')
         self.details.setPlainText(explanation + '\n\nClick a commit to inspect it.\n'
+                                  'T: jump to and fit top commits\n'
                                   'D: diff one or two selected commits\n'
                                   'Delete: hide selected nodes\nR: rearrange visible nodes')
         self.render()
@@ -360,6 +367,19 @@ class Window(QMainWindow):
         self.manual_positions.update(arrange(graph))
         self.render()
         self.view.fit()
+    def fit_top_commits(self):
+        top_nodes = [node for node in self.nodes.values() if node.tip]
+        if not top_nodes:
+            # If every branch tip is hidden, use the exposed topmost commits.
+            parents = {oid for oids in self.parent_edges.values() for oid in oids}
+            top_nodes = [node for oid, node in self.nodes.items() if oid not in parents]
+        if not top_nodes:
+            return
+        bounds = top_nodes[0].sceneBoundingRect()
+        for node in top_nodes:
+            bounds = bounds.united(node.sceneBoundingRect())
+            bounds = bounds.united(node.mapRectToScene(node.childrenBoundingRect()))
+        self.view.fit_bounds(bounds)
     def reset_layout(self):
         self.manual_positions.clear()
         self.render()

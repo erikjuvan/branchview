@@ -56,6 +56,9 @@ to avoid loading history on the first open.
   Line-ending styles (CRLF/LF/CR) are normalized for line matching; conversions
   are reported above the diff. Missing final newlines remain highlighted changes.
 - Space or Fit: fit entire graph. Click a commit: metadata and full message.
+- T or Top commits: jump to and fit the visible branch tips and their labels,
+  excluding ancestor history from the fit. If all tips are hidden, fit the exposed
+  topmost commits. In branch-only mode, fit all visible branch tips.
 - Click a collapsed-chain label: inspect hidden commits.
 - Double-click a chain label: expand it. Collapse all restores compact view.
 - Refresh reloads branch references and history, resetting expansion.
