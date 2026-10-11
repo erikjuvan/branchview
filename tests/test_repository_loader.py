@@ -10,9 +10,17 @@ from git_reader import Commit, Repository
 from graph import build_graph
 from viewer import Window
 from ui_helpers import wait_for_load
+from repository_loader import LoadSignals
+from qt_jobs import emit_if_alive
+from shiboken6 import delete
 
 
 class RepositoryLoaderTest(unittest.TestCase):
+    def test_finished_job_can_outlive_qt_signal_source(self):
+        signals = LoadSignals()
+        delete(signals)
+        emit_if_alive(signals, 'finished', 1, None, None, None, None)
+        emit_if_alive(signals, 'progress', 1, 'Finished')
     def setUp(self):
         self.app = QApplication.instance() or QApplication([])
 

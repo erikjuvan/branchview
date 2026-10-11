@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QApplication
 from git_reader import Commit, Repository
 from search import search_commits
 from viewer import Window
+from ui_helpers import application
 
 
 class SearchTest(unittest.TestCase):

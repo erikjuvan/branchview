@@ -5,6 +5,7 @@ from git_reader import read_repository
 from git_process import GitCancelled
 from graph import build_graph
 from layout import layout, branch_layout
+from qt_jobs import emit_if_alive
 
 
 _pool = QThreadPool()
@@ -27,10 +28,10 @@ class LoadJob(QRunnable):
         repo = graph = positions = error = None
         try:
             repo = read_repository(self.path, **self.options, cancelled=self.cancelled,
-                                   progress=lambda phase: self.signals.progress.emit(self.key, phase))
+                                   progress=lambda phase: emit_if_alive(self.signals, 'progress', self.key, phase))
             if self.cancelled.is_set():
                 raise GitCancelled()
-            self.signals.progress.emit(self.key, 'Preparing graph and layout')
+            emit_if_alive(self.signals, 'progress', self.key, 'Preparing graph and layout')
             graph = build_graph(repo, cancelled=self.cancelled)
             positions = (branch_layout(graph, cancelled=self.cancelled) if repo.branches_only else
                          layout(graph, cancelled=self.cancelled))
@@ -38,7 +39,7 @@ class LoadJob(QRunnable):
             pass
         except Exception as exc:
             error = str(exc)
-        self.signals.finished.emit(self.key, repo, graph, positions, error)
+        emit_if_alive(self.signals, 'finished', self.key, repo, graph, positions, error)
 
 
 class RepositoryLoader(QObject):

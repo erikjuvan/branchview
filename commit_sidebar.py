@@ -8,6 +8,7 @@ from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot
 from PySide6.QtWidgets import QTextBrowser
 
 from commit_info import read_commit_info, InspectionCancelled
+from qt_jobs import emit_if_alive
 
 
 _pool = QThreadPool()
@@ -102,7 +103,7 @@ class InfoJob(QRunnable):
             pass
         except Exception as exc:
             error = str(exc)
-        self.signals.finished.emit(self.key, info, error)
+        emit_if_alive(self.signals, 'finished', self.key, info, error)
 
 
 class CommitSidebar(QTextBrowser):
