@@ -27,6 +27,10 @@ to avoid loading history on the first open.
 - Wheel: zoom around cursor. Left-drag blank background: select multiple nodes. Middle-drag: pan.
 - Ctrl-click adds/removes a node from selection. Drag selected nodes or their
   labels to move the selected group.
+- Selected nodes have gold rings and gold label backgrounds. Their visible parent
+  ancestry, including both merge parents and collapsed chains, is highlighted in
+  turquoise; unrelated paths are dimmed. Multiple selections highlight the union
+  of their ancestry. Branch-only mode highlights selections without loading history.
 - Dark gray theme throughout the window and graph.
 - Drag any commit node or its label to organize the graph freely. Edges and
   collapsed-chain labels follow automatically; the view stays fixed during dragging. Branch tip names move with nodes.

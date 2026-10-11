@@ -3,7 +3,8 @@ from subprocess import TimeoutExpired
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QShortcut, QKeySequence
 from PySide6.QtWidgets import (QMainWindow, QGraphicsView, QGraphicsScene,
     QGraphicsEllipseItem, QGraphicsItem, QFileDialog, QMessageBox, QToolBar,
-    QCheckBox, QTextEdit, QSplitter, QGraphicsTextItem, QMenu, QDialog, QVBoxLayout, QComboBox, QLabel)
+    QCheckBox, QTextEdit, QSplitter, QGraphicsTextItem, QMenu, QDialog, QVBoxLayout, QComboBox, QLabel,
+    QStyle, QStyleOptionGraphicsItem)
 from git_reader import read_repository
 from diff_viewer import DiffViewer
 from graph import build_graph, hide_nodes
@@ -57,6 +58,7 @@ class Node(QGraphicsEllipseItem):
         super().__init__(-8,-8,16,16)
         self.oid = oid
         self.window = window
+        self.tip = tip
         self.setPos(x,y)
         self.setBrush(QColor('#75baff' if tip else '#b5bdc9'))
         self.setPen(QPen(QColor('#d5dce6'), 1))
@@ -65,6 +67,36 @@ class Node(QGraphicsEllipseItem):
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges)
         self.setCursor(Qt.CursorShape.ArrowCursor)
         self.setZValue(2)
+    def boundingRect(self):
+        # Reserve room for the selection ring so selection never changes bounds.
+        return self.rect().adjusted(-7, -7, 7, 7)
+    def paint(self, painter, option, widget=None):
+        option = QStyleOptionGraphicsItem(option)
+        option.state &= ~QStyle.StateFlag.State_Selected
+        super().paint(painter, option, widget)
+        if self.isSelected():
+            painter.save()
+            pen = QPen(QColor('#ffd166'), 2)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(self.rect().adjusted(-5, -5, 5, 5))
+            painter.restore()
+    def highlight(self, ancestor, active):
+        if self.isSelected():
+            fill, border, width = '#ffd166', '#fff0c2', 3
+        elif ancestor:
+            fill, border, width = '#5ce0cc', '#b2fff1', 2
+        elif active:
+            fill, border, width = '#59616e', '#798391', 1
+        else:
+            fill, border, width = ('#75baff' if self.tip else '#b5bdc9'), '#d5dce6', 1
+        self.setBrush(QColor(fill))
+        pen = QPen(QColor(border), width)
+        pen.setCosmetic(True)
+        self.setPen(pen)
+        self.setZValue(4 if self.isSelected() else 2)
+        self.update()
     def mouseDoubleClickEvent(self, event):
         self.window.show_diff(self.oid)
         event.accept()
@@ -83,7 +115,16 @@ class NodeLabel(QGraphicsTextItem):
     def __init__(self, text, node):
         super().__init__(text, node)
         self.node = node
+        self.base_color = QColor('#e1e5eb')
         self.setCursor(Qt.CursorShape.ArrowCursor)
+    def paint(self, painter, option, widget=None):
+        if self.node.isSelected():
+            painter.save()
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor('#59471f'))
+            painter.drawRoundedRect(self.boundingRect(), 4, 4)
+            painter.restore()
+        super().paint(painter, option, widget)
     def mouseDoubleClickEvent(self, event):
         self.node.mouseDoubleClickEvent(event)
     def contextMenuEvent(self, event):
@@ -136,6 +177,7 @@ class Window(QMainWindow):
         self.nodes = {}
         self.labels = []
         self.edge_items = []
+        self.parent_edges = {}
         self.setStyleSheet("""
             QMainWindow, QWidget { background: #303238; color: #e1e5eb; }
             QGraphicsView { background: #292c31; border: 1px solid #484c54; }
@@ -339,6 +381,7 @@ class Window(QMainWindow):
         self.nodes = {}
         self.labels = []
         self.edge_items = []
+        self.parent_edges = {}
         self.scene.blockSignals(False)
         if not self.repo:
             return
@@ -361,9 +404,11 @@ class Window(QMainWindow):
             if oid in graph.tips:
                 names = NodeLabel('\n'.join(self.repo.branches[oid]),node)
                 self.labels.append(names)
+                names.base_color = QColor('#75baff')
                 names.setDefaultTextColor(QColor('#75baff'))
                 names.setPos(-10,-names.boundingRect().height()-15)
         for edge in graph.edges:
+            self.parent_edges.setdefault(edge.child, []).append(edge.parent)
             item = self.scene.addPath(QPainterPath(),QPen(QColor('#818b99'),2))
             item.setZValue(-1)
             label = None
@@ -372,6 +417,7 @@ class Window(QMainWindow):
                 self.scene.addItem(label)
             self.edge_items.append((edge,item,label))
         self.update_edges()
+        self.update_selection_highlights()
         self.scene.setSceneRect(self.scene.itemsBoundingRect().adjusted(-1000,-1000,1000,1000))
         suffix = ' · Shallow history: ancestry is incomplete' if self.repo.shallow else ''
         mode = 'branch tips · history not loaded' if self.repo.branches_only else 'terminal tips'
@@ -380,9 +426,39 @@ class Window(QMainWindow):
         if not graph.tips:
             self.details.setPlainText('No branch tips found. Empty repositories and detached commits without branch references are not displayed.')
     def inspect(self):
+        self.update_selection_highlights()
         if not self.repo:
             return
         for item in self.scene.selectedItems():
             if isinstance(item, Node):
                 c = self.repo.commits[item.oid]
                 self.details.setPlainText(f'Commit: {c.oid}\nBranches: {", ".join(self.repo.branches.get(c.oid, [])) or "—"}\nAuthor: {c.author}\nDate: {c.date}\nParents:\n'+ ('\n'.join(c.parents) or 'Root commit')+'\n\n'+c.message)
+    def update_selection_highlights(self):
+        selected = {item.oid for item in self.scene.selectedItems() if isinstance(item, Node)}
+        ancestry = set()
+        todo = list(selected)
+        while todo:
+            oid = todo.pop()
+            if oid in ancestry:
+                continue
+            ancestry.add(oid)
+            todo.extend(self.parent_edges.get(oid, ()))
+        active = bool(selected)
+        for oid, node in self.nodes.items():
+            node.highlight(oid in ancestry, active)
+        for label in self.labels:
+            oid = label.node.oid
+            color = QColor('#ffd166') if oid in selected else QColor('#80ead9') if oid in ancestry else label.base_color
+            label.setDefaultTextColor(color)
+            label.setOpacity(.6 if active and oid not in ancestry else 1)
+            label.update()
+        for edge, item, label in self.edge_items:
+            highlighted = edge.child in ancestry
+            color = '#5ce0cc' if highlighted else '#454c56' if active else '#818b99'
+            pen = QPen(QColor(color), 3 if highlighted else 2)
+            pen.setCosmetic(True)
+            item.setPen(pen)
+            item.setZValue(0 if highlighted else -1)
+            if label is not None:
+                label.setDefaultTextColor(QColor('#80ead9' if highlighted else '#afb8c4'))
+                label.setOpacity(.6 if active and not highlighted else 1)
