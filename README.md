@@ -26,6 +26,11 @@ larger initial budget or `--max-commits 0` for all history.
 
 ## Controls
 
+- The fixed top section of the right sidebar lists available graph shortcuts.
+  It updates with the selection: D diffs one commit or compares two; Delete is
+  shown for any selection and requires graph focus. With three or more commits,
+  the panel explains how to enable D. Commit details scroll independently below.
+
 - Ctrl+F or Search: find loaded commits by hash, full message, or branch name.
   Enter or double-click jumps to the result, revealing collapsed or hidden nodes.
   With an empty query, show branch tips. Branch-only mode searches only tip metadata.

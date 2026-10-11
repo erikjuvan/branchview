@@ -7,13 +7,14 @@ from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QShortcut, QKeyS
 from PySide6.QtWidgets import (QMainWindow, QGraphicsView, QGraphicsScene,
     QGraphicsEllipseItem, QGraphicsItem, QFileDialog, QMessageBox, QToolBar,
     QCheckBox, QTextEdit, QSplitter, QGraphicsTextItem, QMenu, QDialog, QVBoxLayout, QComboBox, QLabel,
-    QStyle, QStyleOptionGraphicsItem)
+    QStyle, QStyleOptionGraphicsItem, QWidget)
 from diff_viewer import DiffViewer
 from commit_sidebar import CommitSidebar
 from search import SearchDialog
 from repository_loader import RepositoryLoader
 from graph import build_graph, hide_nodes
 from layout import layout, branch_layout
+from shortcut_panel import ShortcutPanel
 
 class View(QGraphicsView):
     def __init__(self, scene):
@@ -269,10 +270,17 @@ class Window(QMainWindow):
         self.details.setReadOnly(True)
         self.details.anchorClicked.connect(self.open_detail_link)
         self.inspected_selection = set()
-        self.details.setPlainText('Open a Git repository.\n\nWheel: zoom\nDrag background: select multiple · middle-drag: pan\nDrag a node or its label: rearrange\nT: jump to and fit top commits\nR: rearrange visible nodes\nD: diff one or two selected commits\nDelete: hide selected nodes\nClick a commit: inspect\nDouble-click a chain label: expand\n\nVertical position represents ancestry, not time.')
+        self.details.setPlainText('Open a Git repository.\n\nCommit details and comparison summaries appear here.\n\nWheel: zoom\nLeft-drag background: select multiple\nMiddle-drag: pan\nDrag a node or its label: rearrange\nDouble-click a node: diff\nDouble-click a chain label: expand')
+        self.shortcuts_panel = ShortcutPanel()
+        self.sidebar = QWidget()
+        sidebar_layout = QVBoxLayout(self.sidebar)
+        sidebar_layout.setContentsMargins(0, 0, 0, 0)
+        sidebar_layout.setSpacing(0)
+        sidebar_layout.addWidget(self.shortcuts_panel, 0, Qt.AlignmentFlag.AlignTop)
+        sidebar_layout.addWidget(self.details, 1)
         splitter = QSplitter()
         splitter.addWidget(self.view)
-        splitter.addWidget(self.details)
+        splitter.addWidget(self.sidebar)
         splitter.setSizes([800,400])
         self.setCentralWidget(splitter)
         toolbar = QToolBar()
@@ -356,6 +364,7 @@ class Window(QMainWindow):
         self.all_branch_tips.setEnabled(not self.branches_only.isChecked())
         self.more_action.setEnabled(bool(self.repo and self.repo.history_limited and not self.loading
                                         and not self.branches_only.isChecked()))
+        self.shortcuts_panel.update_context(self)
     def load_more(self):
         if not self.repo or not self.repo.history_limited or self.loading or self.repo.branches_only:
             return
@@ -421,10 +430,7 @@ class Window(QMainWindow):
                        'History view: vertical position represents ancestry, not time.')
         self.render()
         if repo.branches:
-            self.details.setPlainText(explanation + '\n\nClick a commit to inspect it.\n'
-                                      'T: jump to and fit top commits\n'
-                                      'D: diff one or two selected commits\n'
-                                      'Delete: hide selected nodes\nR: rearrange visible nodes')
+            self.details.setPlainText(explanation + '\n\nClick a commit to inspect its history and changes.')
         if keep_view:
             for oid in selected & self.display_nodes.keys():
                 self.display_nodes[oid].setSelected(True)
@@ -703,8 +709,10 @@ class Window(QMainWindow):
         self.setWindowTitle(f'Git Branch Viewer — {self.repo.path}')
         if not graph.tips:
             self.details.setPlainText('No branch tips found. Empty repositories and detached commits without branch references are not displayed.')
+        self.shortcuts_panel.update_context(self)
     def inspect(self):
         self.update_selection_highlights()
+        self.shortcuts_panel.update_context(self)
         if not self.repo:
             return
         selected = {item.oid for item in self.scene.selectedItems() if isinstance(item, Node)}
