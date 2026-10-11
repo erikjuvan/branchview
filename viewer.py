@@ -2,6 +2,7 @@ from PySide6.QtCore import Qt, QTimer
 from dataclasses import replace
 from urllib.parse import urlsplit, parse_qs
 import re
+from collections import defaultdict
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QShortcut, QKeySequence
 from PySide6.QtWidgets import (QMainWindow, QGraphicsView, QGraphicsScene,
     QGraphicsEllipseItem, QGraphicsItem, QFileDialog, QMessageBox, QToolBar,
@@ -60,9 +61,10 @@ class View(QGraphicsView):
         self.fitInView(bounds.adjusted(-50,-50,50,50), Qt.AspectRatioMode.KeepAspectRatio)
 
 class Node(QGraphicsEllipseItem):
-    def __init__(self, oid, x, y, tip, window):
+    def __init__(self, oid, x, y, tip, window, display_id=None):
         super().__init__(-8,-8,16,16)
         self.oid = oid
+        self.display_id = display_id or oid
         self.window = window
         self.tip = tip
         self.checked_out = any(wt.active and wt.head == oid for wt in window.repo.worktrees) if window.repo else False
@@ -115,7 +117,7 @@ class Node(QGraphicsEllipseItem):
         event.accept()
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-            self.window.manual_positions[self.oid] = (value.x(), value.y())
+            self.window.manual_positions[self.display_id] = (value.x(), value.y())
             self.window.update_edges()
         return super().itemChange(change, value)
 
@@ -126,7 +128,15 @@ class NodeLabel(QGraphicsTextItem):
         self.node = node
         self.base_color = QColor('#e1e5eb')
         self.worktree_badge = False
+        self.included_tip = False
         self.setCursor(Qt.CursorShape.ArrowCursor)
+    def set_included_tip(self, included):
+        self.prepareGeometryChange()
+        self.included_tip = included
+        self.update()
+    def boundingRect(self):
+        rect = super().boundingRect()
+        return rect.adjusted(0, 0, 20, 0) if getattr(self, 'included_tip', False) else rect
     def paint(self, painter, option, widget=None):
         if self.node.isSelected():
             painter.save()
@@ -135,6 +145,27 @@ class NodeLabel(QGraphicsTextItem):
             painter.drawRoundedRect(self.boundingRect(), 4, 4)
             painter.restore()
         super().paint(painter, option, widget)
+        if self.included_tip:
+            # Draw the inclusion icon directly; it must not depend on a font's
+            # Unicode arrow coverage.
+            painter.save()
+            rect = super().boundingRect()
+            x, y = rect.right()+4, rect.center().y()-4
+            path = QPainterPath()
+            path.moveTo(x, y-3)
+            path.lineTo(x, y+2)
+            path.quadTo(x, y+5, x+3, y+5)
+            path.lineTo(x+11, y+5)
+            path.moveTo(x+8, y+2)
+            path.lineTo(x+11, y+5)
+            path.lineTo(x+8, y+8)
+            pen = QPen(self.defaultTextColor(), 1.6)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawPath(path)
+            painter.restore()
     def mouseDoubleClickEvent(self, event):
         self.node.mouseDoubleClickEvent(event)
     def contextMenuEvent(self, event):
@@ -162,7 +193,7 @@ class NodeLabel(QGraphicsTextItem):
 
 class ChainLabel(QGraphicsTextItem):
     def __init__(self, hidden, window):
-        super().__init__(f'{len(hidden)} commits · double-click to expand')
+        super().__init__(f'{len(hidden)} commit'+('s' if len(hidden) != 1 else '')+' · double-click to expand')
         self.hidden, self.window = hidden, window
         self.setDefaultTextColor(QColor('#afb8c4'))
         self.setToolTip('\n'.join(window.repo.commits[o].message.split('\n')[0] for o in hidden[:15]))
@@ -177,14 +208,15 @@ class ChainLabel(QGraphicsTextItem):
         event.accept()
 
 class Window(QMainWindow):
-    def __init__(self, path=None, branches_only=False, history_limit=500):
+    def __init__(self, path=None, branches_only=False, history_limit=500, all_branch_tips=False):
         super().__init__()
         self.repo = None
         self.expanded = set()
         self.hidden_nodes = set()
-        self.positions_by_mode = {False: {}, True: {}}
+        self.positions_by_mode = {False: {}, True: {}, 'all_tips': {}}
         self.manual_positions = self.positions_by_mode[False]
         self.nodes = {}
+        self.display_nodes = {}
         self.labels = []
         self.edge_items = []
         self.parent_edges = {}
@@ -274,6 +306,11 @@ class Window(QMainWindow):
         self.history_limit.currentIndexChanged.connect(self.refresh)
         self.load_toolbar.addWidget(self.history_limit)
         self.more_action = self.load_toolbar.addAction('Load more ancestors', self.load_more)
+        self.all_branch_tips = QCheckBox('All branch tips on top')
+        self.all_branch_tips.setChecked(all_branch_tips)
+        self.all_branch_tips.setToolTip('History mode: show every named tip on top with its ancestry. An arrow marks tips already included in another loaded branch.')
+        self.all_branch_tips.toggled.connect(self.refresh)
+        self.load_toolbar.addWidget(self.all_branch_tips)
         self.branches_only.toggled.connect(self.update_history_controls)
         self.update_history_controls()
         if path:
@@ -299,14 +336,15 @@ class Window(QMainWindow):
         self.statusBar().showMessage(f'Loading {path}…')
         self.update_history_controls()
         self.loader.start(path, remote=self.remote.isChecked(), branches_only=self.branches_only.isChecked(),
-                          commit_limit=self.history_limit.currentData())
+                          commit_limit=self.history_limit.currentData(), all_branch_tips=self.all_branch_tips.isChecked())
     def load_progress(self, phase):
         self.statusBar().showMessage(f'Loading {self.pending_path} · {phase}')
     def restore_load_options(self):
         if self.loaded_options:
-            for widget, key in [(self.remote, 'remote'), (self.branches_only, 'branches_only')]:
+            for widget, key in [(self.remote, 'remote'), (self.branches_only, 'branches_only'),
+                                (self.all_branch_tips, 'all_branch_tips')]:
                 widget.blockSignals(True)
-                widget.setChecked(self.loaded_options[key])
+                widget.setChecked(self.loaded_options.get(key, widget.isChecked()))
                 widget.blockSignals(False)
             limit = self.loaded_options.get('commit_limit', self.history_limit.currentData())
             self.history_limit.blockSignals(True)
@@ -315,6 +353,7 @@ class Window(QMainWindow):
         self.update_history_controls()
     def update_history_controls(self, *_):
         self.history_limit.setEnabled(not self.branches_only.isChecked())
+        self.all_branch_tips.setEnabled(not self.branches_only.isChecked())
         self.more_action.setEnabled(bool(self.repo and self.repo.history_limited and not self.loading
                                         and not self.branches_only.isChecked()))
     def load_more(self):
@@ -352,7 +391,7 @@ class Window(QMainWindow):
             transform = self.view.transform()
             center = self.view.mapToScene(self.view.viewport().rect().center())
             expanded = self.expanded.copy()
-            selected = {item.oid for item in self.scene.selectedItems() if isinstance(item, Node)}
+            selected = {item.display_id for item in self.scene.selectedItems() if isinstance(item, Node)}
         self.preserve_view = False
         self.loading = False
         self.pending_path = None
@@ -364,7 +403,8 @@ class Window(QMainWindow):
             for positions in self.positions_by_mode.values():
                 positions.clear()
             self.hidden_nodes.clear()
-        self.manual_positions = self.positions_by_mode[repo.branches_only]
+        mode = True if repo.branches_only else 'all_tips' if repo.all_branch_tips else False
+        self.manual_positions = self.positions_by_mode[mode]
         self.repo = repo
         if self.search_dialog is not None:
             self.search_dialog.set_repository(repo)
@@ -375,6 +415,9 @@ class Window(QMainWindow):
         explanation = ('Branches only: ancestor history is not loaded.\n'
                        'Nodes are branch tips arranged in a grid; positions do not represent ancestry.'
                        if repo.branches_only else
+                       'History view: all named branch tips start on top. An arrow marks tips included in another branch.\n'
+                       'Each top entry shows only its ancestry; shared commits can also appear below receiving branches.'
+                       if repo.all_branch_tips else
                        'History view: vertical position represents ancestry, not time.')
         self.render()
         if repo.branches:
@@ -383,8 +426,8 @@ class Window(QMainWindow):
                                       'D: diff one or two selected commits\n'
                                       'Delete: hide selected nodes\nR: rearrange visible nodes')
         if keep_view:
-            for oid in selected & self.nodes.keys():
-                self.nodes[oid].setSelected(True)
+            for oid in selected & self.display_nodes.keys():
+                self.display_nodes[oid].setSelected(True)
             self.view.setTransform(transform)
             self.view.centerOn(center)
         else:
@@ -406,7 +449,7 @@ class Window(QMainWindow):
         if not oids:
             return
         # Retain every visible position so hiding never rearranges other nodes.
-        self.manual_positions.update({o: (n.pos().x(), n.pos().y()) for o,n in self.nodes.items()})
+        self.manual_positions.update({o: (n.pos().x(), n.pos().y()) for o,n in self.display_nodes.items()})
         self.hidden_nodes.update(oids)
         self.render()
     def show_hidden_nodes(self):
@@ -491,18 +534,18 @@ class Window(QMainWindow):
             return
         graph = hide_nodes(build_graph(self.repo, self.expanded), self.hidden_nodes)
         # Hidden tip removal can expose new topmost nodes.
-        if not self.repo.branches_only:
+        if not self.repo.branches_only and not self.repo.all_branch_tips:
             graph.tips = sorted(graph.nodes - {e.parent for e in graph.edges})
         arrange = branch_layout if self.repo.branches_only else layout
         self.manual_positions.update(arrange(graph))
         self.render()
         self.view.fit()
     def fit_top_commits(self):
-        top_nodes = [node for node in self.nodes.values() if node.tip]
+        top_nodes = [node for node in self.display_nodes.values() if node.tip]
         if not top_nodes:
             # If every branch tip is hidden, use the exposed topmost commits.
             parents = {oid for oids in self.parent_edges.values() for oid in oids}
-            top_nodes = [node for oid, node in self.nodes.items() if oid not in parents]
+            top_nodes = [node for oid, node in self.display_nodes.items() if oid not in parents]
         if not top_nodes:
             return
         bounds = top_nodes[0].sceneBoundingRect()
@@ -515,16 +558,45 @@ class Window(QMainWindow):
         self.render()
         self.view.fit()
     def update_edges(self):
+        occupied, cells = [], defaultdict(list)
+        def cell_keys(rect):
+            for x in range(int(rect.left()//256), int(rect.right()//256)+1):
+                for y in range(int(rect.top()//128), int(rect.bottom()//128)+1):
+                    yield x, y
+        def reserve(rect):
+            index = len(occupied)
+            occupied.append(rect)
+            for key in cell_keys(rect):
+                cells[key].append(index)
+        for node in self.display_nodes.values():
+            reserve(node.sceneBoundingRect().united(node.mapRectToScene(node.childrenBoundingRect())).adjusted(-4,-4,4,4))
         for edge, item, label in self.edge_items:
-            child = self.nodes[edge.child].pos()
-            parent = self.nodes[edge.parent].pos()
+            child = self.display_nodes[edge.child].pos()
+            parent = self.display_nodes[edge.parent].pos()
             x1,y1,x2,y2 = child.x(),child.y(),parent.x(),parent.y()
             path = QPainterPath()
             path.moveTo(x1,y1)
             path.cubicTo(x1,(y1+y2)/2,x2,(y1+y2)/2,x2,y2)
             item.setPath(path)
             if label is not None:
-                label.setPos((x1+x2)/2+10,(y1+y2)/2-12)
+                middle_x, middle_y = (x1+x2)/2, (y1+y2)/2
+                width = label.boundingRect().width()
+                candidates = [(x, middle_y+dy) for dy in (-12, 16, -40, 44, -68, 72)
+                              for x in (middle_x+12, middle_x-width-24)]
+                def collisions(position):
+                    rect = label.boundingRect().translated(*position)
+                    nearby = {index for key in cell_keys(rect) for index in cells.get(key, ())}
+                    return sum(rect.intersects(occupied[index]) for index in nearby)
+                best, fewest = candidates[0], float('inf')
+                for candidate in candidates:
+                    count = collisions(candidate)
+                    if count < fewest:
+                        best, fewest = candidate, count
+                    if count == 0:
+                        break
+                x, y = best
+                label.setPos(x, y)
+                reserve(label.sceneBoundingRect().adjusted(-4,-4,4,4))
     def render(self):
         self.details.cancel_pending()
         self.details.setPlainText('Select a commit to inspect its history and changes.')
@@ -532,6 +604,7 @@ class Window(QMainWindow):
         self.scene.blockSignals(True)
         self.scene.clear()
         self.nodes = {}
+        self.display_nodes = {}
         self.labels = []
         self.edge_items = []
         self.parent_edges = {}
@@ -548,11 +621,18 @@ class Window(QMainWindow):
         graph = hide_nodes(graph, self.hidden_nodes)
         positions = {oid: xy for oid,xy in positions.items() if oid in graph.nodes}
         positions.update({oid: xy for oid, xy in self.manual_positions.items() if oid in graph.nodes})
-        for oid,(x,y) in positions.items():
+        shared_copies = {graph.commit_oid(entry) for entry in graph.included_tips}
+        for display_id,(x,y) in positions.items():
+            oid = graph.commit_oid(display_id)
             commit = self.repo.commits[oid]
-            node = Node(oid,x,y,oid in graph.tips,self)
-            self.nodes[oid] = node
-            node.setToolTip(f'{oid}\n{commit.message}\nDrag to move')
+            node = Node(oid,x,y,display_id in graph.tips,self,display_id=display_id)
+            self.display_nodes[display_id] = node
+            if oid not in self.nodes or display_id in graph.tips:
+                self.nodes[oid] = node
+            context = ('\nBranch tip shown above; this commit also appears in shared ancestry.' if display_id != oid and oid in shared_copies else
+                       '\nTop-row named branch tip.' if display_id != oid else
+                       '\nThis commit is also shown as a branch tip above.' if oid in shared_copies else '')
+            node.setToolTip(f'{oid}\n{commit.message}{context}\nDrag to move')
             self.scene.addItem(node)
             label = NodeLabel(oid[:8]+' '+commit.message.split('\n')[0][:25], node)
             self.labels.append(label)
@@ -565,17 +645,29 @@ class Window(QMainWindow):
                 boundary.setPos(12, 10)
                 boundary.setToolTip('Use Load more ancestors or choose All history.')
                 self.labels.append(boundary)
+            if display_id == oid and oid in shared_copies:
+                note = NodeLabel('Also shown as a branch tip above', node)
+                note.base_color = QColor('#afb8c4')
+                note.setDefaultTextColor(note.base_color)
+                note.setPos(12, 28 if self.repo.history_limited and any(p not in self.repo.commits for p in commit.parents) else 10)
+                self.labels.append(note)
             checkouts = [wt for wt in self.repo.worktrees if wt.active and wt.head == oid]
-            if oid in graph.tips or checkouts:
+            if display_id in graph.tips or (checkouts and not (self.repo.all_branch_tips and oid in shared_copies)):
                 titles = []
                 for name in self.repo.branches.get(oid, []):
                     trees = [wt for wt in checkouts if wt.branch == self.repo.branch_refs.get(name, 'refs/heads/'+name)]
+                    included = display_id in graph.included_tips
                     title = NodeLabel(name+(' [WT]' if trees else ''), node)
+                    title.set_included_tip(included)
                     title.worktree_badge = bool(trees)
-                    title.base_color = QColor('#c792ea' if trees else '#75baff')
+                    title.base_color = QColor('#c792ea' if trees else '#d8ab65' if included else '#75baff')
                     title.setDefaultTextColor(title.base_color)
+                    tooltip = 'Tip is already included in another loaded branch’s history. Select it for merge/first-parent details.' if included else ''
+                    if self.repo.all_branch_tips and self.repo.history_limited and not included:
+                        tooltip = 'Inclusion may be outside the loaded history. Select this tip for full Git relationship details.'
                     if trees:
-                        title.setToolTip('Checked out in worktree:\n'+'\n'.join(wt.path for wt in trees))
+                        tooltip += '\nChecked out in worktree:\n'+'\n'.join(wt.path for wt in trees)
+                    title.setToolTip(tooltip.strip())
                     titles.append(title)
                 detached = [wt for wt in checkouts if wt.detached]
                 if detached:
@@ -605,7 +697,8 @@ class Window(QMainWindow):
         suffix = ' · Shallow history: ancestry is incomplete' if self.repo.shallow else ''
         if self.repo.history_limited:
             suffix += ' · History limited: ancestry may be incomplete'
-        mode = 'branch tips · history not loaded' if self.repo.branches_only else 'terminal tips'
+        mode = ('branch tips · history not loaded' if self.repo.branches_only else
+                'named branch tips · all on top' if self.repo.all_branch_tips else 'terminal tips')
         self.statusBar().showMessage(f'{self.repo.path} · {len(graph.tips)} {mode} · {len(self.repo.commits)} loaded commits{suffix}')
         self.setWindowTitle(f'Git Branch Viewer — {self.repo.path}')
         if not graph.tips:
@@ -649,8 +742,9 @@ class Window(QMainWindow):
                 self.render()
             self.scene.clearSelection()
             if oid in self.nodes:
-                self.nodes[oid].setSelected(True)
-                self.view.centerOn(self.nodes[oid])
+                node = self.display_nodes.get(oid, self.nodes[oid]) if parse_qs(parsed.query).get('history') == ['1'] else self.nodes[oid]
+                node.setSelected(True)
+                self.view.centerOn(node)
             else:
                 self.details.show_commit(self.repo, oid)
         elif parsed.scheme == 'diff':
@@ -664,7 +758,7 @@ class Window(QMainWindow):
         self.details.cancel_pending()
         super().closeEvent(event)
     def update_selection_highlights(self):
-        selected = {item.oid for item in self.scene.selectedItems() if isinstance(item, Node)}
+        selected = {item.display_id for item in self.scene.selectedItems() if isinstance(item, Node)}
         ancestry = set()
         todo = list(selected)
         while todo:
@@ -674,10 +768,10 @@ class Window(QMainWindow):
             ancestry.add(oid)
             todo.extend(self.parent_edges.get(oid, ()))
         active = bool(selected)
-        for oid, node in self.nodes.items():
+        for oid, node in self.display_nodes.items():
             node.highlight(oid in ancestry, active)
         for label in self.labels:
-            oid = label.node.oid
+            oid = label.node.display_id
             color = label.base_color if label.worktree_badge else QColor('#ffd166') if oid in selected else QColor('#80ead9') if oid in ancestry else label.base_color
             label.setDefaultTextColor(color)
             label.setOpacity(.6 if active and oid not in ancestry and not label.worktree_badge else 1)

@@ -43,6 +43,7 @@ class CommitInfo:
     statistics: str
     warnings: list[str]
     worktrees: list[WorktreeMatch] = field(default_factory=list)
+    included_in: list[str] = field(default_factory=list)
 
 
 def read_commit_info(repo: Repository, oid: str, cancelled: Event | None = None,
@@ -180,4 +181,5 @@ def read_commit_info(repo: Repository, oid: str, cancelled: Event | None = None,
         warnings.append('Cannot compare against the parent: '+str(exc))
     return CommitInfo(commit, email, committer, committer_email, committed, tree,
                       tips, branches, tags, parent_subjects, children, integrations,
-                      files, statistics or 'No file changes relative to this parent.', warnings, worktree_matches)
+                      files, statistics or 'No file changes relative to this parent.', warnings, worktree_matches,
+                      [name for name, tip in branch_tips if tip != oid])

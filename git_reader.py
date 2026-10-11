@@ -64,9 +64,11 @@ class Repository:
     history_limited: bool = False
     worktrees: list[Worktree] = field(default_factory=list)
     branch_refs: dict[str, str] = field(default_factory=dict)
+    all_branch_tips: bool = False
 
 def read_repository(path: str, remote: bool = False, branches_only: bool = False,
-                    cancelled=None, progress=None, commit_limit: int | None = None) -> Repository:
+                    cancelled=None, progress=None, commit_limit: int | None = None,
+                    all_branch_tips: bool = False) -> Repository:
     if commit_limit is not None and commit_limit <= 0:
         raise ValueError('History limit must be positive or None for all history.')
     path = str(Path(path).expanduser().resolve())
@@ -124,7 +126,7 @@ def read_repository(path: str, remote: bool = False, branches_only: bool = False
     report('Reading worktree checkouts')
     worktrees = read_worktrees(path, cancelled=cancelled)
     return Repository(path, commits, branches, git('rev-parse', '--is-shallow-repository').strip() == 'true',
-                      branches_only, commit_limit, incomplete, worktrees, branch_refs)
+                      branches_only, commit_limit, incomplete, worktrees, branch_refs, all_branch_tips)
 
 def read_diff(repo: Repository, oid: str, parent: str | None) -> str:
     """Compare a commit to an actual parent (or empty tree for a root)."""

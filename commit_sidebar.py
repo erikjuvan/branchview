@@ -16,8 +16,9 @@ _pool = QThreadPool()
 _pool.setMaxThreadCount(2)
 
 
-def commit_link(oid, subject=''):
-    return f'<a href="commit:{escape(oid, quote=True)}">{escape(oid[:12])}</a> {escape(subject)}'
+def commit_link(oid, subject='', history=False):
+    suffix = '?history=1' if history else ''
+    return f'<a href="commit:{escape(oid, quote=True)}{suffix}">{escape(oid[:12])}</a> {escape(subject)}'
 
 
 def section(title, body):
@@ -70,6 +71,21 @@ def render_info(info):
             f'Committer: {escape(info.committer)} &lt;{escape(info.committer_email)}&gt;<br>'
             f'Committed: {escape(info.committer_date)}</p>')
     body += section('References pointing here', list_html(escape(ref) for ref in info.tip_refs))
+    named_tip = any(not ref.startswith('tag: ') for ref in info.tip_refs)
+    if named_tip and info.included_in:
+        entries = []
+        for entry in info.integrations:
+            if entry.branch not in info.included_in:
+                continue
+            if entry.kind == 'merge':
+                entries.append(f'<b>{escape(entry.branch)}</b>: merged into its first-parent history via<br>'
+                               + commit_link(entry.merge, entry.subject, history=True))
+            elif entry.kind == 'mainline':
+                entries.append(f'<b>{escape(entry.branch)}</b>: included on its first-parent history; no introducing merge commit')
+            else:
+                entries.append(f'<b>{escape(entry.branch)}</b>: tip is included; introducing merge could not be established')
+        body += section('Branch tip already included', list_html(entries))
+        body += '<p>Inclusion can result from a merge, fast-forward, or shared branch history. Branch names shown are current references.</p>'
     body += section('Contained in branches', list_html(escape(ref) for ref in info.branches))
     body += section('Contained in tags', list_html(escape(tag) for tag in info.tags))
     body += section('Worktree checkouts and history', ''.join(worktree_html(match.worktree, match.relation, match.opened)
@@ -86,7 +102,7 @@ def render_info(info):
         branch = escape(entry.branch)
         if entry.kind == 'merge':
             entries.append(f'<b>{branch}</b>: introduced into its first-parent history by<br>'
-                           + commit_link(entry.merge, entry.subject))
+                           + commit_link(entry.merge, entry.subject, history=True))
         elif entry.kind == 'mainline':
             entries.append(f'<b>{branch}</b>: commit is on its first-parent history')
         else:
@@ -205,6 +221,7 @@ class CommitSidebar(QTextBrowser):
         self.request_id = 0
         self.active_key = None
         self.basic = ''
+        self.context_note = ''
 
     def reset_repository(self, repo):
         self.cancel_pending()
@@ -227,13 +244,18 @@ class CommitSidebar(QTextBrowser):
         self.request_id += 1
         key = (self.generation, oid, self.request_id)
         self.active_key = key
+        self.context_note = ''
+        if oid not in repo.commits:
+            self.context_note = ('<p>This commit is outside the loaded graph. Switch to history mode to navigate its ancestry.</p>'
+                                 if repo.branches_only else
+                                 '<p>This commit is outside the loaded graph. Load more ancestors, choose All history, or include remote branches to place it in the graph.</p>')
         if oid in self.cache:
             self.cache.move_to_end(oid)
-            self.setHtml(render_info(self.cache[oid]))
+            self.setHtml(self.context_note+render_info(self.cache[oid]))
             return
         c = repo.commits.get(oid)
         self.basic = render_basic(c, repo.branches.get(oid, []), repo) if c else f'<p>Commit: {escape(oid)}</p>'
-        self.setHtml(self.basic+'<p>Loading relationships and change summary…</p>')
+        self.setHtml(self.context_note+self.basic+'<p>Loading relationships and change summary…</p>')
         job = InfoJob(key, repo, oid)
         job.signals.finished.connect(self.finished)
         self.jobs[key] = job
@@ -257,5 +279,5 @@ class CommitSidebar(QTextBrowser):
         if key[1] != self.active_oid:
             return
         scroll = self.verticalScrollBar().value()
-        self.setHtml(render_info(info) if info else self.basic+f'<p>Extended details unavailable: {escape(error or "Unknown error")}</p>')
+        self.setHtml(self.context_note+(render_info(info) if info else self.basic+f'<p>Extended details unavailable: {escape(error or "Unknown error")}</p>'))
         self.verticalScrollBar().setValue(scroll)

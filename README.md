@@ -108,6 +108,20 @@ larger initial budget or `--max-commits 0` for all history.
   load the full history. Manual layouts are retained separately for each mode.
   Two-tip diffs initially follow Git's commit-date order; the dialog lets you
   reverse their direction.
+- All branch tips on top (history mode): keep every named tip on the top row,
+  including tips already contained in another included branch. Each top entry
+  shows only parent ancestry. An ancestral tip also appears as a shared-history
+  copy below receiving branches, preserving real merge paths without connecting
+  descendants to the top entry. ↪ marks proven inclusion in loaded history;
+  inclusion may come from a merge, fast-forward, or shared history. The sidebar
+  identifies introducing merges where available and provides clickable hashes
+  that jump to the merge in the receiving history. For commits outside loaded
+  history, links open their details and explain how to load them into the graph.
+  Same-tip names remain grouped; remote references follow Include remote branches.
+  With limited history, an unmarked tip may still be included beyond the graph
+  budget; sidebar queries inspect available Git history independently. Hiding a
+  commit hides both displayed copies; selecting both copies still counts as one
+  distinct commit. Manual layouts are retained separately. CLI: `--all-branch-tips`.
 
 ## Graph meaning
 

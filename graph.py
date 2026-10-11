@@ -1,5 +1,5 @@
 """Terminal-tip filtering and lossless contraction of linear ancestry."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from git_reader import Repository
 from git_process import GitCancelled
 
@@ -18,6 +18,11 @@ class Graph:
     nodes: set[str]
     tips: list[str]
     edges: list[Edge]
+    commit_ids: dict[str, str] = field(default_factory=dict)
+    included_tips: set[str] = field(default_factory=set)
+
+    def commit_oid(self, node):
+        return self.commit_ids.get(node, node)
 
 def terminal_tips(repo: Repository, cancelled=None) -> list[str]:
     ancestors = set()
@@ -57,6 +62,8 @@ def build_graph(repo: Repository, expanded: set[str] | None = None, cancelled=No
             if parent in reachable:
                 children[parent].append(oid)
     keep = set(tips) | (set(expanded or ()) & reachable)
+    if repo.all_branch_tips:
+        keep.update(repo.branches)
     keep.update(wt.head for wt in repo.worktrees if wt.active and wt.head in reachable)
     for oid in reachable:
         check_cancelled(cancelled)
@@ -74,10 +81,34 @@ def build_graph(repo: Repository, expanded: set[str] | None = None, cancelled=No
                 hidden.append(parent)
                 parent = repo.commits[parent].parents[0]
             edges.append(Edge(oid, parent, tuple(hidden)))
+    if repo.all_branch_tips:
+        # An ancestral branch tip needs a separate top entry. Its real commit
+        # remains in receiving branches' ancestry, so no parent edges point
+        # upward to the top entry and that entry has no displayed descendants.
+        commit_ids = {}
+        included = set()
+        top = []
+        originals = list(edges)
+        for oid in sorted(repo.branches, key=lambda o: repo.branches[o][0]):
+            check_cancelled(cancelled)
+            entry = 'tip:'+oid
+            keep.add(entry)
+            commit_ids[entry] = oid
+            top.append(entry)
+            if oid in tips:
+                # Use the same top-entry identity even when a larger history
+                # budget later reveals that this tip is ancestral.
+                keep.discard(oid)
+                edges = [Edge(entry, edge.parent, edge.hidden) if edge.child == oid else edge for edge in edges]
+            else:
+                included.add(entry)
+                edges.extend(Edge(entry, edge.parent, edge.hidden) for edge in originals if edge.child == oid)
+        return Graph(keep, top, edges, commit_ids, included)
     return Graph(keep, tips, edges)
 
 def hide_nodes(graph: Graph, hidden: set[str]) -> Graph:
     """Bypass hidden nodes, preserving each surviving ancestry path."""
+    hidden = {oid for oid in graph.nodes if oid in hidden or graph.commit_oid(oid) in hidden}
     nodes = graph.nodes - hidden
     edges = list(graph.edges)
     for oid in sorted(graph.nodes & hidden):
@@ -88,4 +119,5 @@ def hide_nodes(graph: Graph, hidden: set[str]) -> Graph:
             for after in outgoing:
                 edges.append(Edge(before.child, after.parent,
                                   before.hidden + (oid,) + after.hidden))
-    return Graph(nodes, [tip for tip in graph.tips if tip in nodes], list(dict.fromkeys(edges)))
+    return Graph(nodes, [tip for tip in graph.tips if tip in nodes], list(dict.fromkeys(edges)),
+                 {key: oid for key, oid in graph.commit_ids.items() if key in nodes}, graph.included_tips & nodes)

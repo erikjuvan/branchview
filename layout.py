@@ -21,7 +21,14 @@ def layout(graph: Graph, cancelled=None) -> dict[str, tuple[float, float]]:
         pending[edge.parent] += 1
     depth = {oid: 0 for oid in graph.nodes}
     lanes = {tip: {i} for i, tip in enumerate(graph.tips)}
-    queue = deque(graph.tips)
+    roots = {oid for oid, count in pending.items() if count == 0}
+    copies = {oid: entry for entry, oid in graph.commit_ids.items()}
+    for oid in roots - set(graph.tips):
+        if oid in copies:
+            # An exposed shared-history copy still belongs below its top entry.
+            depth[oid] = 1
+            lanes[oid] = lanes.get(copies[oid], {0})
+    queue = deque([tip for tip in graph.tips if tip in roots] + sorted(roots-set(graph.tips)))
     while queue:
         check_cancelled(cancelled)
         child = queue.popleft()
