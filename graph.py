@@ -60,7 +60,7 @@ def build_graph(repo: Repository, expanded: set[str] | None = None, cancelled=No
     for oid in reachable:
         check_cancelled(cancelled)
         parents = [p for p in repo.commits[oid].parents if p in reachable]
-        if len(parents) != 1 or len(children[oid]) != 1:
+        if len(parents) != 1 or len(repo.commits[oid].parents) != 1 or len(children[oid]) != 1:
             keep.add(oid)
     edges = []
     for oid in sorted(keep):

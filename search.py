@@ -66,8 +66,9 @@ class SearchDialog(QDialog):
             item.setData(Qt.ItemDataRole.UserRole, oid)
             item.setToolTip(commit.message)
             self.results.addItem(item)
-        self.status.setText(f'{count} matches' + (f' · showing first {len(oids)}' if count > len(oids) else '')
-                            + (' · branch tips only' if self.repo.branches_only else ' · loaded history'))
+        scope = 'branch tips only' if self.repo.branches_only else 'limited history' if self.repo.history_limited else 'loaded history'
+        self.status.setText(f'{count} match' + ('es' if count != 1 else '')
+                            + (f' · showing first {len(oids)}' if count > len(oids) else '') + ' · '+scope)
         if oids:
             self.results.setCurrentRow(0)
 

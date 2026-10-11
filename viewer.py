@@ -173,7 +173,7 @@ class ChainLabel(QGraphicsTextItem):
         event.accept()
 
 class Window(QMainWindow):
-    def __init__(self, path=None, branches_only=False):
+    def __init__(self, path=None, branches_only=False, history_limit=500):
         super().__init__()
         self.repo = None
         self.expanded = set()
@@ -189,6 +189,7 @@ class Window(QMainWindow):
         self.pending_path = None
         self.loaded_options = None
         self.prepared = None
+        self.preserve_view = False
         self.loader = RepositoryLoader(self)
         self.loader.ready.connect(self.apply_repository)
         self.loader.failed.connect(self.load_failed)
@@ -258,6 +259,19 @@ class Window(QMainWindow):
         self.addToolBar(self.load_toolbar)
         self.cancel_action = self.load_toolbar.addAction('Cancel load', self.cancel_load)
         self.cancel_action.setEnabled(False)
+        self.load_toolbar.addWidget(QLabel('History:'))
+        self.history_limit = QComboBox()
+        for count in (500, 1000, 5000, 10000, None):
+            self.history_limit.addItem(f'Latest {count:,}' if count else 'All history', count)
+        if self.history_limit.findData(history_limit) < 0:
+            self.history_limit.addItem(f'Latest {history_limit:,}', history_limit)
+        self.history_limit.setCurrentIndex(self.history_limit.findData(history_limit))
+        self.history_limit.setToolTip('Commit budget for history mode; all branch heads are always included.')
+        self.history_limit.currentIndexChanged.connect(self.refresh)
+        self.load_toolbar.addWidget(self.history_limit)
+        self.more_action = self.load_toolbar.addAction('Load more ancestors', self.load_more)
+        self.branches_only.toggled.connect(self.update_history_controls)
+        self.update_history_controls()
         if path:
             self.load(path)
     def open(self):
@@ -273,12 +287,15 @@ class Window(QMainWindow):
         self.search_dialog.activateWindow()
         self.search_dialog.query.setFocus()
         self.search_dialog.query.selectAll()
-    def load(self, path):
+    def load(self, path, preserve_view=False):
+        self.preserve_view = preserve_view
         self.pending_path = path
         self.loading = True
         self.cancel_action.setEnabled(True)
         self.statusBar().showMessage(f'Loading {path}…')
-        self.loader.start(path, remote=self.remote.isChecked(), branches_only=self.branches_only.isChecked())
+        self.update_history_controls()
+        self.loader.start(path, remote=self.remote.isChecked(), branches_only=self.branches_only.isChecked(),
+                          commit_limit=self.history_limit.currentData())
     def load_progress(self, phase):
         self.statusBar().showMessage(f'Loading {self.pending_path} · {phase}')
     def restore_load_options(self):
@@ -287,25 +304,57 @@ class Window(QMainWindow):
                 widget.blockSignals(True)
                 widget.setChecked(self.loaded_options[key])
                 widget.blockSignals(False)
+            limit = self.loaded_options.get('commit_limit', self.history_limit.currentData())
+            self.history_limit.blockSignals(True)
+            self.history_limit.setCurrentIndex(self.history_limit.findData(limit))
+            self.history_limit.blockSignals(False)
+        self.update_history_controls()
+    def update_history_controls(self, *_):
+        self.history_limit.setEnabled(not self.branches_only.isChecked())
+        self.more_action.setEnabled(bool(self.repo and self.repo.history_limited and not self.loading
+                                        and not self.branches_only.isChecked()))
+    def load_more(self):
+        if not self.repo or not self.repo.history_limited or self.loading or self.repo.branches_only:
+            return
+        limit = self.repo.commit_limit
+        if limit is None:
+            return
+        new_limit = limit+max(500, limit)
+        if self.history_limit.findData(new_limit) < 0:
+            self.history_limit.addItem(f'Latest {new_limit:,}', new_limit)
+        self.history_limit.blockSignals(True)
+        self.history_limit.setCurrentIndex(self.history_limit.findData(new_limit))
+        self.history_limit.blockSignals(False)
+        self.load(self.repo.path, preserve_view=True)
     def cancel_load(self):
         self.loader.cancel()
         self.loading = False
         self.pending_path = None
+        self.preserve_view = False
         self.cancel_action.setEnabled(False)
         self.restore_load_options()
         self.statusBar().showMessage('Load canceled · previous view retained' if self.repo else 'Load canceled · Open a repository to try again')
     def load_failed(self, error):
         self.loading = False
         self.pending_path = None
+        self.preserve_view = False
         self.cancel_action.setEnabled(False)
         self.restore_load_options()
         self.statusBar().showMessage('Repository loading failed')
         QMessageBox.warning(self, 'Cannot open repository', error)
     def apply_repository(self, repo, graph, positions, options):
+        keep_view = self.preserve_view and self.repo is not None and self.repo.path == repo.path
+        if keep_view:
+            transform = self.view.transform()
+            center = self.view.mapToScene(self.view.viewport().rect().center())
+            expanded = self.expanded.copy()
+            selected = {item.oid for item in self.scene.selectedItems() if isinstance(item, Node)}
+        self.preserve_view = False
         self.loading = False
         self.pending_path = None
         self.cancel_action.setEnabled(False)
         self.loaded_options = options
+        self.update_history_controls()
         self.prepared = (repo, graph, positions)
         if self.repo is None or self.repo.path != repo.path:
             for positions in self.positions_by_mode.values():
@@ -317,6 +366,8 @@ class Window(QMainWindow):
             self.search_dialog.set_repository(repo)
         self.details.reset_repository(repo)
         self.expanded.clear()
+        if keep_view:
+            self.expanded.update(expanded & repo.commits.keys())
         explanation = ('Branches only: ancestor history is not loaded.\n'
                        'Nodes are branch tips arranged in a grid; positions do not represent ancestry.'
                        if repo.branches_only else
@@ -327,7 +378,14 @@ class Window(QMainWindow):
                                       'T: jump to and fit top commits\n'
                                       'D: diff one or two selected commits\n'
                                       'Delete: hide selected nodes\nR: rearrange visible nodes')
-        self.view.fit()
+        if keep_view:
+            for oid in selected & self.nodes.keys():
+                self.nodes[oid].setSelected(True)
+            self.view.setTransform(transform)
+            self.view.centerOn(center)
+        else:
+            self.view.fit()
+        self.update_history_controls()
     def refresh(self, *_):
         path = self.pending_path if self.loading else self.repo.path if self.repo else None
         if path:
@@ -496,6 +554,13 @@ class Window(QMainWindow):
             self.labels.append(label)
             label.setDefaultTextColor(QColor('#e1e5eb'))
             label.setPos(12,-14)
+            if self.repo.history_limited and any(p not in self.repo.commits for p in commit.parents):
+                boundary = NodeLabel('Earlier history not loaded', node)
+                boundary.base_color = QColor('#d8ab65')
+                boundary.setDefaultTextColor(boundary.base_color)
+                boundary.setPos(12, 10)
+                boundary.setToolTip('Use Load more ancestors or choose All history.')
+                self.labels.append(boundary)
             if oid in graph.tips:
                 names = NodeLabel('\n'.join(self.repo.branches[oid]),node)
                 self.labels.append(names)
@@ -515,6 +580,8 @@ class Window(QMainWindow):
         self.update_selection_highlights()
         self.scene.setSceneRect(self.scene.itemsBoundingRect().adjusted(-1000,-1000,1000,1000))
         suffix = ' · Shallow history: ancestry is incomplete' if self.repo.shallow else ''
+        if self.repo.history_limited:
+            suffix += ' · History limited: ancestry may be incomplete'
         mode = 'branch tips · history not loaded' if self.repo.branches_only else 'terminal tips'
         self.statusBar().showMessage(f'{self.repo.path} · {len(graph.tips)} {mode} · {len(self.repo.commits)} loaded commits{suffix}')
         self.setWindowTitle(f'Git Branch Viewer — {self.repo.path}')

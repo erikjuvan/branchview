@@ -20,9 +20,13 @@ class Repository:
     branches: dict[str, list[str]]
     shallow: bool = False
     branches_only: bool = False
+    commit_limit: int | None = None
+    history_limited: bool = False
 
 def read_repository(path: str, remote: bool = False, branches_only: bool = False,
-                    cancelled=None, progress=None) -> Repository:
+                    cancelled=None, progress=None, commit_limit: int | None = None) -> Repository:
+    if commit_limit is not None and commit_limit <= 0:
+        raise ValueError('History limit must be positive or None for all history.')
     path = str(Path(path).expanduser().resolve())
     def git(*args, input_bytes=None):
         return run_git(path, args, cancelled=cancelled, input_bytes=input_bytes).decode('utf-8', errors='replace')
@@ -39,9 +43,12 @@ def read_repository(path: str, remote: bool = False, branches_only: bool = False
         if not symbolic:
             branches.setdefault(oid, []).append(name)
     commits = {}
+    truncated = False
     if branches:
         # NUL fields avoid ambiguity from whitespace and multiline messages.
         ordering = ['--no-walk=sorted'] if branches_only else ['--topo-order']
+        if commit_limit is not None and not branches_only:
+            ordering.append(f'--max-count={commit_limit+1}')
         report('Reading branch tips' if branches_only else 'Reading commit history')
         output = git('log', *ordering, '--no-show-signature',
                      '--format=%H%x00%P%x00%an%x00%aI%x00%B%x00', '--stdin',
@@ -52,9 +59,26 @@ def read_repository(path: str, remote: bool = False, branches_only: bool = False
                 raise GitCancelled()
             oid, parents, author, date, message = fields[i:i+5]
             oid = oid.strip()
+            if not branches_only and commit_limit is not None and len(commits) >= commit_limit:
+                truncated = True
+                break
             commits[oid] = Commit(oid, tuple(parents.split()), author, date, message.strip())
+        # A global history budget must never remove an older branch head.
+        missing_tips = set(branches)-commits.keys()
+        if missing_tips:
+            report('Reading remaining branch tips')
+            tip_fields = git('log', '--no-walk=sorted', '--no-show-signature',
+                             '--format=%H%x00%P%x00%an%x00%aI%x00%B%x00', '--stdin',
+                             input_bytes=('\n'.join(sorted(missing_tips))+'\n').encode()).split('\0')
+            for i in range(0, len(tip_fields)-1, 5):
+                if cancelled is not None and cancelled.is_set():
+                    raise GitCancelled()
+                oid, parents, author, date, message = tip_fields[i:i+5]
+                oid = oid.strip()
+                commits[oid] = Commit(oid, tuple(parents.split()), author, date, message.strip())
+    incomplete = truncated and any(p not in commits for c in commits.values() for p in c.parents)
     return Repository(path, commits, branches, git('rev-parse', '--is-shallow-repository').strip() == 'true',
-                      branches_only)
+                      branches_only, commit_limit, incomplete)
 
 def read_diff(repo: Repository, oid: str, parent: str | None) -> str:
     """Compare a commit to an actual parent (or empty tree for a root)."""

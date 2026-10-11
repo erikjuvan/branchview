@@ -21,6 +21,8 @@ Alternatively run `python main.py` and use Open. On Arch Linux, installing
 
 For large repositories, start with `python main.py --branches-only /path/to/repository`
 to avoid loading history on the first open.
+History mode defaults to a 500-commit budget. Use `--max-commits 5000` for a
+larger initial budget or `--max-commits 0` for all history.
 
 ## Controls
 
@@ -80,6 +82,11 @@ to avoid loading history on the first open.
 - Repository loading and initial graph calculation run in the background. The
   status bar shows the current phase. Cancel load keeps the previous view; a new
   Open or display-option change supersedes any unfinished load.
+- History: choose a commit budget or All history. Every branch head is retained,
+  so the loaded count can exceed the budget. Load more ancestors increases the
+  budget while retaining zoom, pan, selection, expansion, and manual positions.
+  Boundary labels and the status bar identify missing history; ancestry and
+  terminal-tip filtering are approximate until the missing history is loaded.
 - Local branches by default; optionally include remote-tracking branches.
 - Branches only: show every branch tip in a compact grid, with no ancestor nodes
   or ancestry edges. This also includes branches pointing to ancestors of other
@@ -104,9 +111,8 @@ terminal detection can only use available history.
 
 The application only reads Git data. It does not fetch, checkout, merge, or
 write repository files. Uncommitted changes, tags, and detached-only commits
-are outside the scope of this first version. History mode is intended
-for small repositories with roughly ten branches. Branch-only mode
-avoids history traversal and is useful for larger repositories. Layout is deterministic,
+are outside the scope of this first version. History mode loads a bounded slice
+by default. Branch-only mode avoids history traversal. Layout is deterministic,
 but merge edges can cross and long labels can overlap in complicated histories.
 
 ## Verification
