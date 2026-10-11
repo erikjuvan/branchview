@@ -21,19 +21,19 @@ class WorkspaceWindow(QMainWindow):
     def __init__(self, path=None, recursive=False, **options):
         super().__init__()
         self.options = options
-        self.setStyleSheet('QMainWindow, QTabWidget, QTabBar { background: #303238; color: #e1e5eb; } '
-                           'QTabWidget::pane { border: 1px solid #484c54; } '
-                           'QTabBar::tab { background: #35383e; color: #afb8c4; padding: 7px 14px; } '
-                           'QTabBar::tab:selected { background: #464c58; color: #ffd166; } '
-                           'QToolBar, QStatusBar { background: #35383e; color: #e1e5eb; } '
+        self.setStyleSheet('QMainWindow, QTabWidget, QTabBar { background: #252526; color: #cccccc; } '
+                           'QTabWidget::pane { border: 1px solid #3c3c3c; } '
+                           'QTabBar::tab { background: #2d2d30; color: #969696; padding: 7px 14px; } '
+                           'QTabBar::tab:selected { background: #1e1e1e; color: #cccccc; } '
+                           'QToolBar, QStatusBar { background: #2d2d30; color: #cccccc; } '
                            'QToolBar { border: none; spacing: 4px; padding: 2px; } '
-                           'QToolBar QLabel, QToolBar QCheckBox { color: #e1e5eb; background: transparent; } '
+                           'QToolBar QLabel, QToolBar QCheckBox { color: #cccccc; background: transparent; } '
                            'QToolBar QCheckBox { spacing: 5px; padding: 2px; } '
                            'QToolBar QCheckBox::indicator { width: 12px; height: 12px; '
-                           'border: 1px solid #8e98a6; background: #292c31; } '
-                           'QToolBar QCheckBox::indicator:checked { background: #80ead9; border-color: #80ead9; } '
-                           'QToolButton { color: #e1e5eb; padding: 5px; border: none; border-radius: 4px; } '
-                           'QToolButton:hover { background: #4a4e56; }')
+                           'border: 1px solid #8e98a6; background: #1e1e1e; } '
+                           'QToolBar QCheckBox::indicator:checked { background: #007acc; border-color: #007acc; } '
+                           'QToolButton { color: #cccccc; padding: 5px; border: none; border-radius: 4px; } '
+                           'QToolButton:hover { background: #37373d; }')
         self.scanner = RepositoryScanner(self)
         self.scanner.progress.connect(lambda message: self.statusBar().showMessage(message))
         self.scanner.ready.connect(self.scan_finished)

@@ -9,7 +9,7 @@ class ShortcutPanel(QFrame):
         super().__init__()
         self.setObjectName('ShortcutPanel')
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
-        self.setStyleSheet('QFrame#ShortcutPanel { background: #35383e; border-bottom: 1px solid #69717e; } '
+        self.setStyleSheet('QFrame#ShortcutPanel { background: #252526; border-bottom: 1px solid #3c3c3c; } '
                            'QLabel { background: transparent; }')
         box = QVBoxLayout(self)
         box.setContentsMargins(10, 8, 10, 8)
@@ -28,7 +28,7 @@ class ShortcutPanel(QFrame):
         box.addLayout(self.grid)
         self.note = QLabel()
         self.note.setWordWrap(True)
-        self.note.setStyleSheet('color: #afb8c4; font-size: 9pt;')
+        self.note.setStyleSheet('color: #969696; font-size: 9pt;')
         box.addWidget(self.note)
         self.entries = []
 
@@ -82,7 +82,7 @@ class ShortcutPanel(QFrame):
         for row, (key, action, tooltip) in enumerate(entries):
             badge = QLabel(key)
             badge.setTextFormat(Qt.TextFormat.PlainText)
-            badge.setStyleSheet('background: #464c58; color: #ffd166; border-radius: 3px; padding: 1px 5px;')
+            badge.setStyleSheet('background: #333333; color: #ffd166; border-radius: 3px; padding: 1px 5px;')
             description = QLabel(action)
             description.setWordWrap(True)
             badge.setToolTip(tooltip)

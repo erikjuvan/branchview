@@ -138,7 +138,7 @@ class NodeLabel(QGraphicsTextItem):
     def __init__(self, text, node):
         super().__init__(text, node)
         self.node = node
-        self.base_color = QColor('#e1e5eb')
+        self.base_color = QColor('#cccccc')
         self.worktree_badge = False
         self.remote_branch = False
         self.ref_badge = False
@@ -249,21 +249,21 @@ class Window(QMainWindow):
         self.loader.failed.connect(self.load_failed)
         self.loader.progress.connect(self.load_progress)
         self.setStyleSheet("""
-            QMainWindow, QWidget { background: #303238; color: #e1e5eb; }
-            QGraphicsView { background: #292c31; border: 1px solid #484c54; }
-            QTextEdit { background: #35383e; color: #e1e5eb; border: 1px solid #484c54; }
-            QToolBar { background: #35383e; border: none; spacing: 6px; padding: 5px; }
+            QMainWindow, QWidget { background: #252526; color: #cccccc; }
+            QGraphicsView { background: #1e1e1e; border: 1px solid #3c3c3c; }
+            QTextEdit { background: #252526; color: #cccccc; border: 1px solid #3c3c3c; }
+            QToolBar { background: #252526; border: none; spacing: 6px; padding: 5px; }
             QToolButton { padding: 6px; border-radius: 4px; }
-            QToolButton:hover { background: #4a4e56; }
+            QToolButton:hover { background: #37373d; }
             QCheckBox { padding: 4px; }
-            QStatusBar { background: #35383e; }
-            QSplitter::handle { background: #484c54; }
-            QToolTip { background: #41464e; color: #f0f2f5; border: 1px solid #69717e; }
+            QStatusBar { background: #252526; }
+            QSplitter::handle { background: #3c3c3c; }
+            QToolTip { background: #252526; color: #cccccc; border: 1px solid #454545; }
         """)
         self.setWindowTitle('Git Branch Viewer')
         self.resize(1200,800)
         self.scene = QGraphicsScene(self)
-        self.scene.setBackgroundBrush(QColor('#292c31'))
+        self.scene.setBackgroundBrush(QColor('#1e1e1e'))
         self.scene.selectionChanged.connect(self.inspect)
         self.view = View(self.scene)
         self.fit_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Space), self)
@@ -778,7 +778,7 @@ class Window(QMainWindow):
             self.scene.addItem(node)
             label = NodeLabel(oid[:8]+' '+commit.message.split('\n')[0][:140 if regular else 25], node)
             self.labels.append(label)
-            label.setDefaultTextColor(QColor('#e1e5eb'))
+            label.setDefaultTextColor(QColor('#cccccc'))
             label.setPos(12,-14)
             if self.repo.history_limited and any(p not in self.repo.commits for p in commit.parents) and not regular:
                 boundary = NodeLabel('Earlier history not loaded', node)

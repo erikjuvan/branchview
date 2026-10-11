@@ -69,17 +69,17 @@ class DiffEditor(QPlainTextEdit):
         self.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
         self.setTabStopDistance(self.fontMetrics().horizontalAdvance(' ') * 4)
         self.setStyleSheet('''
-            QPlainTextEdit { background: #24272d; color: #e1e5eb; border: none; }
-            QScrollBar:vertical { background: #24272d; width: 12px; margin: 0; }
-            QScrollBar:horizontal { background: #24272d; height: 12px; margin: 0; }
-            QScrollBar::handle { background: #59616e; border-radius: 4px; }
-            QScrollBar::handle:hover { background: #75808f; }
+            QPlainTextEdit { background: #1e1e1e; color: #cccccc; border: none; }
+            QScrollBar:vertical { background: #1e1e1e; width: 12px; margin: 0; }
+            QScrollBar:horizontal { background: #1e1e1e; height: 12px; margin: 0; }
+            QScrollBar::handle { background: #424242; border-radius: 4px; }
+            QScrollBar::handle:hover { background: #4f4f4f; }
             QScrollBar::handle:vertical { min-height: 24px; }
             QScrollBar::handle:horizontal { min-width: 24px; }
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
             QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
             QScrollBar::add-page, QScrollBar::sub-page { background: none; }
-            QAbstractScrollArea::corner { background: #24272d; }
+            QAbstractScrollArea::corner { background: #1e1e1e; }
         ''')
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
@@ -108,8 +108,8 @@ class DiffEditor(QPlainTextEdit):
 
     def paint_numbers(self, event):
         painter = QPainter(self.gutter)
-        painter.fillRect(event.rect(), QColor('#2b2f36'))
-        painter.setPen(QColor('#929ba8'))
+        painter.fillRect(event.rect(), QColor('#1e1e1e'))
+        painter.setPen(QColor('#858585'))
         painter.setFont(self.font())
         block = self.firstVisibleBlock()
         top = self.blockBoundingGeometry(block).translated(self.contentOffset()).top()
@@ -130,7 +130,7 @@ class DiffEditor(QPlainTextEdit):
             if row.changed:
                 selection = QTextEdit.ExtraSelection()
                 selection.cursor = QTextCursor(self.document().findBlockByNumber(index))
-                color = self.change_color if self.numbers[index] is not None else '#30343c'
+                color = self.change_color if self.numbers[index] is not None else '#252526'
                 selection.format.setBackground(QColor(color))
                 selection.format.setProperty(QTextFormat.Property.FullWidthSelection, True)
                 selections.append(selection)
