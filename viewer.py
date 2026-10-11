@@ -285,6 +285,8 @@ class Window(QMainWindow):
         splitter.setSizes([800,400])
         self.setCentralWidget(splitter)
         toolbar = QToolBar()
+        self.graph_toolbar = toolbar
+        toolbar.setMovable(False)
         self.addToolBar(toolbar)
         for name, callback in [('Open…', self.open), ('Search…', self.open_search), ('Refresh', self.refresh),
                                ('Fit', self.view.fit), ('Top commits', self.fit_top_commits),
@@ -295,14 +297,13 @@ class Window(QMainWindow):
             toolbar.addAction(name, callback)
         self.remote = QCheckBox('Include remote branches')
         self.remote.toggled.connect(self.refresh)
-        toolbar.addWidget(self.remote)
         self.branches_only = QCheckBox('Branches only')
         self.branches_only.setToolTip('Show all branch tips without loading ancestor history.')
         self.branches_only.setChecked(branches_only)
         self.branches_only.toggled.connect(self.refresh)
-        toolbar.addWidget(self.branches_only)
         self.addToolBarBreak()
         self.load_toolbar = QToolBar('Loading and history')
+        self.load_toolbar.setMovable(False)
         self.addToolBar(self.load_toolbar)
         self.cancel_action = self.load_toolbar.addAction('Cancel load', self.cancel_load)
         self.cancel_action.setEnabled(False)
@@ -322,6 +323,9 @@ class Window(QMainWindow):
         self.all_branch_tips.setToolTip('History mode: show every named tip on top with its ancestry. An arrow marks tips already included in another loaded branch.')
         self.all_branch_tips.toggled.connect(self.refresh)
         self.load_toolbar.addWidget(self.all_branch_tips)
+        self.load_toolbar.addSeparator()
+        self.load_toolbar.addWidget(self.remote)
+        self.load_toolbar.addWidget(self.branches_only)
         self.branches_only.toggled.connect(self.update_history_controls)
         self.update_history_controls()
         if path:

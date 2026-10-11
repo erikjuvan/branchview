@@ -25,7 +25,13 @@ class WorkspaceWindow(QMainWindow):
                            'QTabBar::tab { background: #35383e; color: #afb8c4; padding: 7px 14px; } '
                            'QTabBar::tab:selected { background: #464c58; color: #ffd166; } '
                            'QToolBar, QStatusBar { background: #35383e; color: #e1e5eb; } '
-                           'QToolButton { color: #e1e5eb; padding: 5px; } '
+                           'QToolBar { border: none; spacing: 4px; padding: 2px; } '
+                           'QToolBar QLabel, QToolBar QCheckBox { color: #e1e5eb; background: transparent; } '
+                           'QToolBar QCheckBox { spacing: 5px; padding: 2px; } '
+                           'QToolBar QCheckBox::indicator { width: 12px; height: 12px; '
+                           'border: 1px solid #8e98a6; background: #292c31; } '
+                           'QToolBar QCheckBox::indicator:checked { background: #80ead9; border-color: #80ead9; } '
+                           'QToolButton { color: #e1e5eb; padding: 5px; border: none; border-radius: 4px; } '
                            'QToolButton:hover { background: #4a4e56; }')
         self.scanner = RepositoryScanner(self)
         self.scanner.progress.connect(lambda message: self.statusBar().showMessage(message))
@@ -44,6 +50,9 @@ class WorkspaceWindow(QMainWindow):
         self.tabs.currentChanged.connect(self.activate_tab)
         self.setCentralWidget(self.tabs)
         toolbar = QToolBar('Repositories')
+        self.repository_toolbar = toolbar
+        toolbar.setMovable(False)
+        self.mounted_page = None
         self.addToolBar(toolbar)
         toolbar.addAction('Open…', self.open)
         self.cancel_scan_action = toolbar.addAction('Cancel batch open', self.cancel_batch)
@@ -148,6 +157,12 @@ class WorkspaceWindow(QMainWindow):
         page.repository_key = key
         page.repository_path = path
         page.setWindowFlags(Qt.WindowType.Widget)
+        # The active repository's controls belong above the tab strip.
+        # Inactive toolbars stay owned by their page, preserving widget state.
+        page.removeToolBarBreak(page.load_toolbar)
+        for toolbar in (page.graph_toolbar, page.load_toolbar):
+            page.removeToolBar(toolbar)
+            toolbar.hide()
         index = self.tabs.addTab(page, Path(path).name or path)
         self.tabs.setTabToolTip(index, path)
         self.update_titles()
@@ -172,6 +187,13 @@ class WorkspaceWindow(QMainWindow):
             self.tabs.setTabText(index, path if names.count(name) > 1 else name or path)
 
     def activate_tab(self, index):
+        if self.mounted_page is not None:
+            self.removeToolBarBreak(self.mounted_page.load_toolbar)
+            for toolbar in (self.mounted_page.graph_toolbar, self.mounted_page.load_toolbar):
+                self.removeToolBar(toolbar)
+                toolbar.setParent(self.mounted_page)
+                toolbar.hide()
+            self.mounted_page = None
         for i in range(self.tabs.count()):
             page = self.tabs.widget(i)
             for shortcut in page.findChildren(QShortcut):
@@ -181,6 +203,12 @@ class WorkspaceWindow(QMainWindow):
         page = self.tabs.widget(index)
         self.setWindowTitle(f'{page.repository_path} — Git Branch Viewer' if page else 'Git Branch Viewer')
         if page:
+            self.addToolBar(page.graph_toolbar)
+            self.addToolBarBreak()
+            self.addToolBar(page.load_toolbar)
+            page.graph_toolbar.show()
+            page.load_toolbar.show()
+            self.mounted_page = page
             page.view.setFocus()
 
     def cycle_tab(self, direction):
