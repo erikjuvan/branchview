@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QTextBrowser
 
 from commit_info import read_commit_info, InspectionCancelled
 from qt_jobs import emit_if_alive
+from git_reader import opened_worktree
 
 
 _pool = QThreadPool()
@@ -105,6 +106,68 @@ def render_info(info):
     return body
 
 
+def render_selection(repo, selected, cache):
+    oids = [oid for oid in reversed(repo.commits) if oid in selected]
+    authors = sorted({repo.commits[oid].author for oid in oids})
+    branches = sorted({name for oid in oids for name in repo.branches.get(oid, [])})
+    author_label = 'author name' if len(authors) == 1 else 'author names'
+    branch_label = 'branch reference' if len(branches) == 1 else 'branch references'
+    body = (f'<h2>{len(oids)} commits selected</h2>'
+            f'<p>{len(authors)} {author_label} · {len(branches)} {branch_label} pointing at selection</p>')
+    if len(oids) == 2:
+        source, target = oids
+        body += f'<p><a href="compare:{source}/{target}">Compare {source[:12]} → {target[:12]}</a> (D)</p>'
+    else:
+        body += '<p>Select exactly two commits to compare them with D.</p>'
+    body += section('Branches pointing at selection', list_html(escape(name) for name in branches))
+    if oids and all(oid in cache for oid in oids):
+        shared = set(cache[oids[0]].branches)
+        for oid in oids[1:]:
+            shared.intersection_update(cache[oid].branches)
+        body += section('Shared containing branches (cached)', list_html(escape(name) for name in sorted(shared)))
+
+    relationships = {oid: [] for oid in oids}
+    tree_summaries = []
+    opened = opened_worktree(repo.path, repo.worktrees)
+    for wt in repo.worktrees:
+        if not wt.active:
+            continue
+        reachable, todo = set(), [wt.head]
+        while todo:
+            oid = todo.pop()
+            if oid in reachable:
+                continue
+            reachable.add(oid)
+            commit = repo.commits.get(oid)
+            if commit:
+                todo.extend(commit.parents)
+        matches = set(oids) & reachable
+        if not matches:
+            continue
+        ancestors = len(matches)-int(wt.head in matches)
+        description = []
+        if wt.head in matches:
+            description.append('HEAD is selected')
+        if ancestors:
+            description.append(f'{ancestors} selected ancestor'+('s' if ancestors != 1 else '')+' in loaded history')
+        tree_summaries.append(worktree_html(wt, ' · '.join(description), wt == opened))
+        for oid in matches:
+            relationships[oid].append(('HEAD' if oid == wt.head else 'ancestor')+': '+wt.path)
+    body += section('Worktrees related to selection', ''.join(tree_summaries) or 'No matches in loaded history.')
+    body += '<p>Worktree ancestry in this summary uses loaded history; inspect a single commit for full Git queries.</p>'
+    cards = []
+    for oid in oids:
+        c = repo.commits[oid]
+        names = ', '.join(repo.branches.get(oid, [])) or 'None'
+        card = ('<p>'+commit_link(oid, c.message.split('\n')[0])+f'<br>Branches pointing here: {escape(names)}'
+                f'<br>Author: {escape(c.author)}<br>Date: {escape(c.date)}')
+        if relationships[oid]:
+            card += '<br>'+escape(' · '.join(relationships[oid]))
+        cards.append(card+'</p>')
+    body += section('Selected commits', list_html(cards))
+    return body
+
+
 class JobSignals(QObject):
     finished = Signal(object, object, object)
 
@@ -175,6 +238,12 @@ class CommitSidebar(QTextBrowser):
         job.signals.finished.connect(self.finished)
         self.jobs[key] = job
         _pool.start(job)
+
+    def show_selection(self, repo, oids):
+        if repo is not self.repo:
+            self.reset_repository(repo)
+        self.cancel_pending()
+        self.setHtml(render_selection(repo, set(oids), self.cache))
 
     @Slot(object, object, object)
     def finished(self, key, info, error):

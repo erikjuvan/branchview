@@ -33,6 +33,12 @@ larger initial budget or `--max-commits 0` for all history.
 - Wheel: zoom around cursor. Left-drag blank background: select multiple nodes. Middle-drag: pan.
 - Ctrl-click adds/removes a node from selection. Drag selected nodes or their
   labels to move the selected group.
+- Multiple selections show a combined sidebar summary: selection count, branch
+  references, individual commit links/authors/dates, and worktree relationships
+  proven by loaded history. Two selections include a comparison link and D hint.
+  Cached details also show shared containing branches when available. Selecting
+  one commit restores full details; unfinished single-commit queries cannot
+  replace a multi-selection summary.
 - Selected nodes have gold rings and gold label backgrounds. Their visible parent
   ancestry, including both merge parents and collapsed chains, is highlighted in
   turquoise; unrelated paths are dimmed. Multiple selections highlight the union

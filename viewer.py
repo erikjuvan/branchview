@@ -617,7 +617,9 @@ class Window(QMainWindow):
         selected = {item.oid for item in self.scene.selectedItems() if isinstance(item, Node)}
         newly_selected = selected - self.inspected_selection
         self.inspected_selection = selected
-        if selected:
+        if len(selected) > 1:
+            self.details.show_selection(self.repo, selected)
+        elif selected:
             if newly_selected:
                 oid = sorted(newly_selected)[0]
             elif self.details.active_oid in selected:
@@ -630,6 +632,12 @@ class Window(QMainWindow):
             self.details.setPlainText('Select a commit to inspect its history and changes.')
     def open_detail_link(self, url):
         parsed = urlsplit(url.toString())
+        if parsed.scheme == 'compare':
+            oids = parsed.path.split('/')
+            if self.repo and len(oids) == 2 and all(re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', oid)
+                                                   and oid in self.repo.commits for oid in oids):
+                self.show_commit_diff(*oids)
+            return
         oid = parsed.path
         if not self.repo or not re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', oid):
             return

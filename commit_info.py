@@ -104,7 +104,7 @@ def read_commit_info(repo: Repository, oid: str, cancelled: Event | None = None,
         if wt.bare or not wt.head.strip('0'):
             continue
         if wt.head == oid:
-            relation = 'HEAD is this commit'
+            relation = 'Recorded HEAD is this commit (prunable worktree)' if wt.prunable is not None else 'HEAD is this commit'
         elif not wt.active:
             continue
         elif wt.branch:
