@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QSignalBlocker
 from dataclasses import replace
 from urllib.parse import urlsplit, parse_qs
 import re
@@ -674,12 +674,16 @@ class Window(QMainWindow):
             self.expanded.add(oid)
         if oid in self.hidden_nodes or oid not in self.nodes:
             self.hidden_nodes.discard(oid)
-            self.render()
+            self.render(update_shortcuts=False)
         node = self.nodes.get(oid)
         if node is None:
             return
-        self.scene.clearSelection()
-        node.setSelected(True)
+        # Publish only the final selection. An intermediate empty selection
+        # shrinks the shortcut panel and resets the branch list's scroll range.
+        with QSignalBlocker(self.scene):
+            self.scene.clearSelection()
+            node.setSelected(True)
+        self.scene.selectionChanged.emit()
         bounds = node.sceneBoundingRect().united(node.mapRectToScene(node.childrenBoundingRect()))
         self.view.fit_bounds(bounds.adjusted(-120, -90, 120, 90))
         if self.view.transform().m11() > 1.5:
@@ -734,7 +738,7 @@ class Window(QMainWindow):
                 x, y = best
                 label.setPos(x, y)
                 reserve(label.sceneBoundingRect().adjusted(-4,-4,4,4))
-    def render(self):
+    def render(self, update_shortcuts=True):
         self.branch_panel.set_repository(self.repo)
         self.details.cancel_pending()
         self.details.setPlainText('Select a commit to inspect its history and changes.')
@@ -859,7 +863,8 @@ class Window(QMainWindow):
         self.setWindowTitle(f'Git Branch Viewer — {self.repo.path}')
         if not graph.tips:
             self.details.setPlainText('No branch tips found. Empty repositories and detached commits without branch references are not displayed.')
-        self.shortcuts_panel.update_context(self)
+        if update_shortcuts:
+            self.shortcuts_panel.update_context(self)
     def inspect(self):
         self.update_selection_highlights()
         self.shortcuts_panel.update_context(self)

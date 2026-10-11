@@ -1,15 +1,91 @@
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from viewer import Window
+from branch_panel import BranchPanel
+from git_reader import Commit, Repository
 from test_workspace import create_repo
 from test_commit_browser import git
 from ui_helpers import application, wait_for_load
 
 
 class BranchPanelTest(unittest.TestCase):
+    def test_bottom_branch_click_keeps_viewport_during_shortcut_updates(self):
+        for branches_only in (True, False):
+            with self.subTest(branches_only=branches_only):
+                self.check_bottom_branch_click(branches_only)
+
+    def check_bottom_branch_click(self, branches_only):
+        ids = [f'{i:040x}' for i in range(1, 24)]
+        window = Window()
+        window.resize(1600, 1000)
+        window.repo = Repository('synthetic',
+                                 {oid: Commit(oid, (ids[i-1],) if i else (), 'Tester', '', 'Commit')
+                                  for i, oid in enumerate(ids)},
+                                 {oid: [f'branch-{i:03}'] for i, oid in enumerate(ids)},
+                                 branches_only=branches_only)
+        try:
+            with patch.object(window.details, 'show_commit'):
+                window.render()
+                window.show()
+                QTest.qWait(30)
+                panel = window.branch_panel
+                panel.parentWidget().setSizes([400, 400])
+                QTest.qWait(30)
+                scrollbar = panel.list.verticalScrollBar()
+                for row in (21, 20, 21):
+                    scrollbar.setValue(scrollbar.maximum())
+                    scroll = scrollbar.value()
+                    item = panel.list.item(row)
+                    rect = panel.list.visualItemRect(item)
+                    self.assertGreater(scroll, 0)
+                    self.assertTrue(panel.list.viewport().rect().contains(rect))
+                    QTest.mouseClick(panel.list.viewport(), Qt.MouseButton.LeftButton, pos=rect.center())
+                    QTest.qWait(30)
+                    self.assertGreaterEqual(scrollbar.value(), scroll)
+                    self.assertTrue(panel.list.viewport().rect().contains(panel.list.visualItemRect(item)))
+                    self.assertEqual(panel.list.currentItem(), item)
+                    self.assertTrue(window.nodes[ids[row]].isSelected())
+        finally:
+            window.close()
+            application.processEvents()
+
+    def test_click_during_refresh_keeps_scrolled_branch_visible(self):
+        repo = Repository('synthetic', {}, {'1'*40: [
+            f'{prefix}-{i:03}' for prefix in ('aaa', 'topic') for i in range(100)]})
+        for query in ('', 'topic'):
+            with self.subTest(filter=query):
+                panel = BranchPanel()
+                panel.resize(350, 240)
+                panel.set_repository(repo)
+                panel.filter.setText(query)
+                panel.branch_clicked.connect(lambda *_: panel.set_repository(replace(repo)))
+                panel.show()
+                try:
+                    QTest.qWait(30)
+                    scrollbar = panel.list.verticalScrollBar()
+                    scrollbar.setValue(175 if not query else 75)
+                    item = panel.list.item(179)
+                    selected_name = item.text()
+                    scroll = scrollbar.value()
+                    rect = panel.list.visualItemRect(item)
+                    self.assertGreater(scroll, 0)
+                    self.assertTrue(panel.list.viewport().rect().contains(rect))
+                    QTest.mouseClick(panel.list.viewport(), Qt.MouseButton.LeftButton, pos=rect.center())
+                    QTest.qWait(30)
+                    self.assertEqual(scrollbar.value(), scroll)
+                    self.assertEqual(panel.list.currentItem().text(), selected_name)
+                    self.assertEqual(panel.filter.text(), query)
+                    self.assertTrue(panel.list.viewport().rect().contains(
+                        panel.list.visualItemRect(panel.list.currentItem())))
+                finally:
+                    panel.close()
+                    application.processEvents()
+
     def test_remote_option_jump_reveals_collapsed_and_hidden_tip(self):
         with tempfile.TemporaryDirectory() as directory:
             path = create_repo(Path(directory)/'repo')

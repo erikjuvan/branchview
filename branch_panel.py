@@ -5,6 +5,18 @@ from PySide6.QtGui import QColor
 from branch_colors import remote_name, remote_color
 
 
+class BranchList(QListWidget):
+    def resizeEvent(self, event):
+        current = self.currentItem()
+        keep_visible = (current is not None and not current.isHidden()
+                        and self.viewport().rect().intersects(self.visualItemRect(current)))
+        super().resizeEvent(event)
+        # Selection adds shortcut rows above this list. Keep a visible current
+        # branch in view when those rows reduce the list's available height.
+        if keep_visible and event.size().height() < event.oldSize().height():
+            self.scrollToItem(current)
+
+
 class BranchPanel(QWidget):
     branch_clicked = Signal(str, str)
 
@@ -20,7 +32,7 @@ class BranchPanel(QWidget):
         self.filter.setPlaceholderText('Filter branches…')
         self.filter.textChanged.connect(self.filter_branches)
         box.addWidget(self.filter)
-        self.list = QListWidget()
+        self.list = BranchList()
         self.list.setMinimumHeight(50)
         self.list.itemClicked.connect(self.activate)
         self.list.itemActivated.connect(self.activate)
@@ -32,6 +44,9 @@ class BranchPanel(QWidget):
         self.repo = repo
         selected = self.list.currentItem()
         selected_name = selected.text() if selected else None
+        vertical_scroll = self.list.verticalScrollBar().value()
+        horizontal_scroll = self.list.horizontalScrollBar().value()
+        selected_item = None
         self.list.clear()
         branches = [(name, oid, repo.branch_refs.get(name, 'refs/heads/'+name))
                     for oid, names in repo.branches.items() for name in names] if repo else []
@@ -46,11 +61,17 @@ class BranchPanel(QWidget):
                 item.setToolTip(item.toolTip()+'\nRemote: '+remote)
             self.list.addItem(item)
             if name == selected_name:
-                self.list.setCurrentItem(item)
+                selected_item = item
         self.heading.setText(f'Branches ({len(branches):,})')
         self.heading.setToolTip('Local branches: blue. Remote branches: muted teal, with a stable shade per remote.\n'
                                 'Checked-out worktree labels in the graph remain purple.')
         self.filter_branches(self.filter.text())
+        self.list.setCurrentItem(selected_item)
+        # Rebuild the filtered layout before restoring the viewport. Restoring
+        # selection while rows are still unfiltered can scroll it out of view.
+        self.list.doItemsLayout()
+        self.list.verticalScrollBar().setValue(vertical_scroll)
+        self.list.horizontalScrollBar().setValue(horizontal_scroll)
 
     def filter_branches(self, query):
         for index in range(self.list.count()):

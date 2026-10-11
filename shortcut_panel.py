@@ -74,18 +74,26 @@ class ShortcutPanel(QFrame):
         if entries == self.entries:
             return
         self.entries = entries
-        while self.grid.count():
-            widget = self.grid.takeAt(0).widget()
-            if widget:
-                widget.hide()
-                widget.deleteLater()
+        # Reuse rows so the panel never temporarily collapses while rebuilding.
+        # That would enlarge the branch list and clamp its scrollbar upward.
         for row, (key, action, tooltip) in enumerate(entries):
-            badge = QLabel(key)
-            badge.setTextFormat(Qt.TextFormat.PlainText)
-            badge.setStyleSheet('background: #333333; color: #ffd166; border-radius: 3px; padding: 1px 5px;')
-            description = QLabel(action)
-            description.setWordWrap(True)
+            cell = self.grid.itemAtPosition(row, 0)
+            if cell is None:
+                badge = QLabel()
+                badge.setTextFormat(Qt.TextFormat.PlainText)
+                badge.setStyleSheet('background: #333333; color: #ffd166; border-radius: 3px; padding: 1px 5px;')
+                description = QLabel()
+                description.setWordWrap(True)
+                self.grid.addWidget(badge, row, 0, Qt.AlignmentFlag.AlignLeft)
+                self.grid.addWidget(description, row, 1)
+            else:
+                badge = cell.widget()
+                description = self.grid.itemAtPosition(row, 1).widget()
+            badge.setText(key)
+            description.setText(action)
             badge.setToolTip(tooltip)
             description.setToolTip(tooltip)
-            self.grid.addWidget(badge, row, 0, Qt.AlignmentFlag.AlignLeft)
-            self.grid.addWidget(description, row, 1)
+        while self.grid.count() > 2*len(entries):
+            widget = self.grid.takeAt(self.grid.count()-1).widget()
+            widget.hide()
+            widget.deleteLater()
