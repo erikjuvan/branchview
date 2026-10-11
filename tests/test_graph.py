@@ -5,6 +5,7 @@ import unittest
 from git_reader import read_repository
 from graph import build_graph, terminal_tips
 from layout import layout
+from ui_helpers import wait_for_load
 
 class GitGraphTest(unittest.TestCase):
     def test_real_git_merges_aliases_and_expansion(self):
@@ -62,6 +63,7 @@ class GitGraphTest(unittest.TestCase):
             from viewer import Window
             app=QApplication.instance() or QApplication([])
             window=Window(path)
+            wait_for_load(window)
             window.show(); app.processEvents()
             self.assertEqual(len(window.repo.commits),len(repo.commits))
             window.expanded.update(hidden); window.render(); window.view.fit()
@@ -91,6 +93,7 @@ class GitGraphTest(unittest.TestCase):
             window.collapse()
             self.assertEqual(window.nodes[oid].pos().x(), 650)
             window.refresh()
+            wait_for_load(window)
             self.assertEqual(window.nodes[oid].pos().y(), 420)
             self.assertEqual(window.scene.backgroundBrush().color().name(), '#292c31')
             window.grab().save('/workspace/scratch/1b60b907429c/theme_preview.png')

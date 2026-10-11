@@ -1,6 +1,11 @@
 """Terminal-tip filtering and lossless contraction of linear ancestry."""
 from dataclasses import dataclass
 from git_reader import Repository
+from git_process import GitCancelled
+
+def check_cancelled(cancelled):
+    if cancelled is not None and cancelled.is_set():
+        raise GitCancelled()
 
 @dataclass(frozen=True)
 class Edge:
@@ -14,12 +19,14 @@ class Graph:
     tips: list[str]
     edges: list[Edge]
 
-def terminal_tips(repo: Repository) -> list[str]:
+def terminal_tips(repo: Repository, cancelled=None) -> list[str]:
     ancestors = set()
     for tip in repo.branches:
+        check_cancelled(cancelled)
         todo = list(repo.commits[tip].parents)
         visited = set()
         while todo:
+            check_cancelled(cancelled)
             oid = todo.pop()
             if oid in visited or oid not in repo.commits:
                 continue
@@ -28,14 +35,16 @@ def terminal_tips(repo: Repository) -> list[str]:
         ancestors.update(visited)
     return sorted(set(repo.branches)-ancestors, key=lambda oid: repo.branches[oid][0])
 
-def build_graph(repo: Repository, expanded: set[str] | None = None) -> Graph:
+def build_graph(repo: Repository, expanded: set[str] | None = None, cancelled=None) -> Graph:
+    check_cancelled(cancelled)
     if repo.branches_only:
         tips = sorted(repo.branches, key=lambda oid: repo.branches[oid][0])
         return Graph(set(tips), tips, [])
-    tips = terminal_tips(repo)
+    tips = terminal_tips(repo, cancelled=cancelled)
     reachable = set()
     todo = tips.copy()
     while todo:
+        check_cancelled(cancelled)
         oid = todo.pop()
         if oid in reachable or oid not in repo.commits:
             continue
@@ -43,16 +52,19 @@ def build_graph(repo: Repository, expanded: set[str] | None = None) -> Graph:
         todo.extend(repo.commits[oid].parents)
     children = {oid: [] for oid in reachable}
     for oid in reachable:
+        check_cancelled(cancelled)
         for parent in repo.commits[oid].parents:
             if parent in reachable:
                 children[parent].append(oid)
     keep = set(tips) | (set(expanded or ()) & reachable)
     for oid in reachable:
+        check_cancelled(cancelled)
         parents = [p for p in repo.commits[oid].parents if p in reachable]
         if len(parents) != 1 or len(children[oid]) != 1:
             keep.add(oid)
     edges = []
     for oid in sorted(keep):
+        check_cancelled(cancelled)
         for parent in repo.commits[oid].parents:
             if parent not in reachable:
                 continue

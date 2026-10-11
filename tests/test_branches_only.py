@@ -11,6 +11,7 @@ from git_reader import read_repository, read_changed_files
 from graph import build_graph
 from layout import branch_layout
 from viewer import Window
+from ui_helpers import wait_for_load
 
 
 class BranchesOnlyTest(unittest.TestCase):
@@ -67,6 +68,7 @@ class BranchesOnlyTest(unittest.TestCase):
             self.assertNotIn('origin/HEAD', [name for names in remote.branches.values() for name in names])
 
             window = Window(path, branches_only=True)
+            wait_for_load(window)
             self.addCleanup(window.close)
             self.assertTrue(window.branches_only.isChecked())
             self.assertEqual(set(window.nodes), {root, side, tip})
@@ -76,15 +78,18 @@ class BranchesOnlyTest(unittest.TestCase):
             self.assertEqual({label.node.oid for label in window.labels if label.toPlainText() == 'old'}, {root})
             window.nodes[tip].setPos(789, 456)
             window.branches_only.setChecked(False)
+            wait_for_load(window)
             self.assertFalse(window.repo.branches_only)
             self.assertIn('History view', window.details.toPlainText())
             self.assertIn(parent, window.repo.commits)
             self.assertTrue(window.edge_items)
             window.nodes[tip].setPos(321, 654)
             window.branches_only.setChecked(True)
+            wait_for_load(window)
             self.assertEqual((window.nodes[tip].pos().x(), window.nodes[tip].pos().y()), (789, 456))
             window.hide_node(root)
             window.refresh()
+            wait_for_load(window)
             self.assertNotIn(root, window.nodes)
             window.rearrange_visible()
             self.assertNotIn(root, window.nodes)
@@ -92,8 +97,10 @@ class BranchesOnlyTest(unittest.TestCase):
             window.show_hidden_nodes()
             self.assertIn(root, window.nodes)
             window.branches_only.setChecked(False)
+            wait_for_load(window)
             self.assertEqual((window.nodes[tip].pos().x(), window.nodes[tip].pos().y()), (321, 654))
             window.branches_only.setChecked(True)
+            wait_for_load(window)
             snapshots = []
 
             def inspect_dialog(dialog):
@@ -106,8 +113,9 @@ class BranchesOnlyTest(unittest.TestCase):
                 window.show_diff(tip)
                 window.show_commit_diff(root, tip)
             self.assertEqual(snapshots, [(None, root, 1), (parent, tip, 0), (root, tip, 0)])
-            with patch('viewer.read_repository', side_effect=RuntimeError('Load failed')), patch('viewer.QMessageBox.warning'):
+            with patch('repository_loader.read_repository', side_effect=RuntimeError('Load failed')), patch('viewer.QMessageBox.warning'):
                 window.branches_only.setChecked(False)
+                wait_for_load(window)
             self.assertTrue(window.branches_only.isChecked())
             self.assertTrue(window.repo.branches_only)
 

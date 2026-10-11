@@ -1,5 +1,4 @@
 from PySide6.QtCore import Qt, QTimer
-from subprocess import TimeoutExpired
 from dataclasses import replace
 from urllib.parse import urlsplit, parse_qs
 import re
@@ -8,10 +7,10 @@ from PySide6.QtWidgets import (QMainWindow, QGraphicsView, QGraphicsScene,
     QGraphicsEllipseItem, QGraphicsItem, QFileDialog, QMessageBox, QToolBar,
     QCheckBox, QTextEdit, QSplitter, QGraphicsTextItem, QMenu, QDialog, QVBoxLayout, QComboBox, QLabel,
     QStyle, QStyleOptionGraphicsItem)
-from git_reader import read_repository
 from diff_viewer import DiffViewer
 from commit_sidebar import CommitSidebar
 from search import SearchDialog
+from repository_loader import RepositoryLoader
 from graph import build_graph, hide_nodes
 from layout import layout, branch_layout
 
@@ -186,6 +185,14 @@ class Window(QMainWindow):
         self.edge_items = []
         self.parent_edges = {}
         self.search_dialog = None
+        self.loading = False
+        self.pending_path = None
+        self.loaded_options = None
+        self.prepared = None
+        self.loader = RepositoryLoader(self)
+        self.loader.ready.connect(self.apply_repository)
+        self.loader.failed.connect(self.load_failed)
+        self.loader.progress.connect(self.load_progress)
         self.setStyleSheet("""
             QMainWindow, QWidget { background: #303238; color: #e1e5eb; }
             QGraphicsView { background: #292c31; border: 1px solid #484c54; }
@@ -246,6 +253,11 @@ class Window(QMainWindow):
         self.branches_only.setChecked(branches_only)
         self.branches_only.toggled.connect(self.refresh)
         toolbar.addWidget(self.branches_only)
+        self.addToolBarBreak()
+        self.load_toolbar = QToolBar('Loading and history')
+        self.addToolBar(self.load_toolbar)
+        self.cancel_action = self.load_toolbar.addAction('Cancel load', self.cancel_load)
+        self.cancel_action.setEnabled(False)
         if path:
             self.load(path)
     def open(self):
@@ -262,15 +274,39 @@ class Window(QMainWindow):
         self.search_dialog.query.setFocus()
         self.search_dialog.query.selectAll()
     def load(self, path):
-        try:
-            repo = read_repository(path, self.remote.isChecked(), self.branches_only.isChecked())
-        except (RuntimeError, OSError, TimeoutError, TimeoutExpired) as exc:
-            if self.repo:
-                self.branches_only.blockSignals(True)
-                self.branches_only.setChecked(self.repo.branches_only)
-                self.branches_only.blockSignals(False)
-            QMessageBox.warning(self, 'Cannot open repository', str(exc))
-            return
+        self.pending_path = path
+        self.loading = True
+        self.cancel_action.setEnabled(True)
+        self.statusBar().showMessage(f'Loading {path}…')
+        self.loader.start(path, remote=self.remote.isChecked(), branches_only=self.branches_only.isChecked())
+    def load_progress(self, phase):
+        self.statusBar().showMessage(f'Loading {self.pending_path} · {phase}')
+    def restore_load_options(self):
+        if self.loaded_options:
+            for widget, key in [(self.remote, 'remote'), (self.branches_only, 'branches_only')]:
+                widget.blockSignals(True)
+                widget.setChecked(self.loaded_options[key])
+                widget.blockSignals(False)
+    def cancel_load(self):
+        self.loader.cancel()
+        self.loading = False
+        self.pending_path = None
+        self.cancel_action.setEnabled(False)
+        self.restore_load_options()
+        self.statusBar().showMessage('Load canceled · previous view retained' if self.repo else 'Load canceled · Open a repository to try again')
+    def load_failed(self, error):
+        self.loading = False
+        self.pending_path = None
+        self.cancel_action.setEnabled(False)
+        self.restore_load_options()
+        self.statusBar().showMessage('Repository loading failed')
+        QMessageBox.warning(self, 'Cannot open repository', error)
+    def apply_repository(self, repo, graph, positions, options):
+        self.loading = False
+        self.pending_path = None
+        self.cancel_action.setEnabled(False)
+        self.loaded_options = options
+        self.prepared = (repo, graph, positions)
         if self.repo is None or self.repo.path != repo.path:
             for positions in self.positions_by_mode.values():
                 positions.clear()
@@ -293,8 +329,9 @@ class Window(QMainWindow):
                                       'Delete: hide selected nodes\nR: rearrange visible nodes')
         self.view.fit()
     def refresh(self, *_):
-        if self.repo:
-            self.load(self.repo.path)
+        path = self.pending_path if self.loading else self.repo.path if self.repo else None
+        if path:
+            self.load(path)
     def collapse(self):
         self.expanded.clear()
         self.render()
@@ -439,9 +476,13 @@ class Window(QMainWindow):
         self.scene.blockSignals(False)
         if not self.repo:
             return
-        graph = build_graph(self.repo, self.expanded)
-        arrange = branch_layout if self.repo.branches_only else layout
-        positions = arrange(graph)
+        if self.prepared is not None and self.prepared[0] is self.repo and not self.expanded:
+            _, graph, automatic = self.prepared
+            positions = dict(automatic)
+        else:
+            graph = build_graph(self.repo, self.expanded)
+            arrange = branch_layout if self.repo.branches_only else layout
+            positions = arrange(graph)
         graph = hide_nodes(graph, self.hidden_nodes)
         positions = {oid: xy for oid,xy in positions.items() if oid in graph.nodes}
         positions.update({oid: xy for oid, xy in self.manual_positions.items() if oid in graph.nodes})
@@ -521,6 +562,7 @@ class Window(QMainWindow):
                 file_path = parse_qs(parsed.query).get('file', [None])[0]
                 self.show_diff(oid, repo=repo, file_path=file_path)
     def closeEvent(self, event):
+        self.loader.cancel()
         self.details.cancel_pending()
         super().closeEvent(event)
     def update_selection_highlights(self):

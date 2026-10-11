@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication, QComboBox, QDialog
 from git_reader import read_commit_diff, read_repository
 from viewer import Window
 from diff_viewer import DiffViewer
+from ui_helpers import wait_for_load
 
 
 class CommitDiffTest(unittest.TestCase):
@@ -45,6 +46,7 @@ class CommitDiffTest(unittest.TestCase):
 
             app = QApplication.instance() or QApplication([])
             window = Window(path)
+            wait_for_load(window)
             self.addCleanup(window.close)
             self.assertEqual(len(window.node_menu(main).actions()), 1)
             window.nodes[main].setSelected(True)

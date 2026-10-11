@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication, QDialog
 from diff_viewer import DiffViewer, align_lines, line_endings
 from git_reader import Commit, Repository, ChangedFile, read_repository, read_changed_files, read_blob
 from viewer import Window
+from ui_helpers import wait_for_load
 
 
 class DiffViewerTest(unittest.TestCase):
@@ -190,6 +191,7 @@ class DiffViewerTest(unittest.TestCase):
             self.assertEqual(viewer.files.count(), 0)
 
             window = Window(path)
+            wait_for_load(window)
             self.addCleanup(window.close)
             snapshots = []
 

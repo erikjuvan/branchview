@@ -77,6 +77,9 @@ to avoid loading history on the first open.
 - Click a collapsed-chain label: inspect hidden commits.
 - Double-click a chain label: expand it. Collapse all restores compact view.
 - Refresh reloads branch references and history, resetting expansion.
+- Repository loading and initial graph calculation run in the background. The
+  status bar shows the current phase. Cancel load keeps the previous view; a new
+  Open or display-option change supersedes any unfinished load.
 - Local branches by default; optionally include remote-tracking branches.
 - Branches only: show every branch tip in a compact grid, with no ancestor nodes
   or ancestry edges. This also includes branches pointing to ancestors of other
@@ -101,8 +104,8 @@ terminal detection can only use available history.
 
 The application only reads Git data. It does not fetch, checkout, merge, or
 write repository files. Uncommitted changes, tags, and detached-only commits
-are outside the scope of this first version. Loading is synchronous; intended
-for small repositories with roughly ten branches in history mode. Branch-only mode
+are outside the scope of this first version. History mode is intended
+for small repositories with roughly ten branches. Branch-only mode
 avoids history traversal and is useful for larger repositories. Layout is deterministic,
 but merge edges can cross and long labels can overlap in complicated histories.
 

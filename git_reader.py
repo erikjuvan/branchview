@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import os
 import subprocess
+from git_process import run_git, GitCancelled
 
 @dataclass(frozen=True)
 class Commit:
@@ -20,18 +21,19 @@ class Repository:
     shallow: bool = False
     branches_only: bool = False
 
-def read_repository(path: str, remote: bool = False, branches_only: bool = False) -> Repository:
+def read_repository(path: str, remote: bool = False, branches_only: bool = False,
+                    cancelled=None, progress=None) -> Repository:
     path = str(Path(path).expanduser().resolve())
-    def git(*args):
-        result = subprocess.run(['git', '--no-replace-objects', '-C', path, *args],
-            capture_output=True, encoding='utf-8', errors='replace',
-            env={**os.environ, 'GIT_OPTIONAL_LOCKS': '0', 'GIT_TERMINAL_PROMPT': '0'}, timeout=120)
-        if result.returncode:
-            raise RuntimeError(result.stderr.strip() or 'Git command failed')
-        return result.stdout
+    def git(*args, input_bytes=None):
+        return run_git(path, args, cancelled=cancelled, input_bytes=input_bytes).decode('utf-8', errors='replace')
+    def report(message):
+        if progress:
+            progress(message)
+    report('Checking repository')
     git('rev-parse', '--git-dir')
     refs = ['refs/heads'] + (['refs/remotes'] if remote else [])
     branches = {}
+    report('Reading branch references')
     for line in git('for-each-ref', '--format=%(objectname)%09%(refname:short)%09%(symref)', *refs).splitlines():
         oid, name, symbolic = line.split('\t')
         if not symbolic:
@@ -40,14 +42,14 @@ def read_repository(path: str, remote: bool = False, branches_only: bool = False
     if branches:
         # NUL fields avoid ambiguity from whitespace and multiline messages.
         ordering = ['--no-walk=sorted'] if branches_only else ['--topo-order']
-        result = subprocess.run(['git', '--no-replace-objects', '-C', path, 'log', *ordering,
-            '--no-show-signature', '--format=%H%x00%P%x00%an%x00%aI%x00%B%x00', '--stdin'],
-            input='\n'.join(branches)+'\n', capture_output=True, encoding='utf-8', errors='replace',
-            env={**os.environ, 'GIT_OPTIONAL_LOCKS':'0'}, timeout=120)
-        if result.returncode:
-            raise RuntimeError(result.stderr.strip())
-        fields = result.stdout.split('\0')
+        report('Reading branch tips' if branches_only else 'Reading commit history')
+        output = git('log', *ordering, '--no-show-signature',
+                     '--format=%H%x00%P%x00%an%x00%aI%x00%B%x00', '--stdin',
+                     input_bytes=('\n'.join(branches)+'\n').encode())
+        fields = output.split('\0')
         for i in range(0, len(fields)-1, 5):
+            if cancelled is not None and cancelled.is_set():
+                raise GitCancelled()
             oid, parents, author, date, message = fields[i:i+5]
             oid = oid.strip()
             commits[oid] = Commit(oid, tuple(parents.split()), author, date, message.strip())

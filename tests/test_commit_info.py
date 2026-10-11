@@ -14,6 +14,7 @@ from commit_sidebar import CommitSidebar, render_info
 from git_reader import read_repository
 from viewer import Window
 from diff_viewer import DiffViewer
+from ui_helpers import wait_for_load
 
 
 class CommitInfoTest(unittest.TestCase):
@@ -22,14 +23,14 @@ class CommitInfoTest(unittest.TestCase):
         process = MagicMock()
         process.__enter__.return_value = process
 
-        def communicate(timeout=None):
+        def communicate(timeout=None, input=None):
             if timeout is not None:
                 event.set()
                 raise subprocess.TimeoutExpired('git', timeout)
             return b'', b''
 
         process.communicate.side_effect = communicate
-        with patch('commit_info.subprocess.Popen', return_value=process):
+        with patch('git_process.subprocess.Popen', return_value=process):
             with self.assertRaises(InspectionCancelled):
                 _inspection_bytes(self.repo, ('log', '--all'), event)
         process.kill.assert_called_once()
@@ -147,6 +148,7 @@ class CommitInfoTest(unittest.TestCase):
             self.assertEqual(reader.call_count, 2)
 
         window = Window(self.path, branches_only=True)
+        wait_for_load(window)
         self.addCleanup(window.close)
         tips = set(window.repo.commits)
         window.open_detail_link(QUrl('commit:'+self.base))
@@ -170,6 +172,7 @@ class CommitInfoTest(unittest.TestCase):
             window.open_detail_link(QUrl('diff:'+self.feature+'?file=feature.txt'))
         self.assertEqual(paths, ['feature.txt'])
         window.branches_only.setChecked(False)
+        wait_for_load(window)
         self.assertNotIn(self.main_change, window.nodes)
         window.open_detail_link(QUrl('commit:'+self.main_change))
         self.assertIn(self.main_change, window.nodes)

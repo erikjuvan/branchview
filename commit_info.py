@@ -1,43 +1,14 @@
 """On-demand commit provenance derived from locally available Git history."""
 from dataclasses import dataclass, replace
 import re
-import os
-import subprocess
-from time import monotonic
 from threading import Event
 
 from git_reader import Commit, Repository, ChangedFile, _git_bytes, read_changed_files
-
-
-class InspectionCancelled(Exception):
-    pass
+from git_process import run_git, GitCancelled as InspectionCancelled
 
 
 def _inspection_bytes(repo, args, cancelled):
-    if cancelled is None:
-        return _git_bytes(repo, *args)
-    command = ['git', '--no-replace-objects', '-C', repo.path, *args]
-    env = {**os.environ, 'GIT_OPTIONAL_LOCKS': '0', 'GIT_TERMINAL_PROMPT': '0'}
-    deadline = monotonic()+120
-    with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
-                          creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)) as process:
-        while True:
-            if cancelled.is_set():
-                process.kill()
-                process.communicate()
-                raise InspectionCancelled()
-            if monotonic() >= deadline:
-                process.kill()
-                process.communicate()
-                raise subprocess.TimeoutExpired(command, 120)
-            try:
-                output, error = process.communicate(timeout=.1)
-                break
-            except subprocess.TimeoutExpired:
-                continue
-        if process.returncode:
-            raise RuntimeError(error.decode('utf-8', errors='replace').strip())
-        return output
+    return run_git(repo.path, args, cancelled=cancelled)
 
 
 @dataclass(frozen=True)
