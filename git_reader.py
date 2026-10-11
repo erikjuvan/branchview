@@ -55,12 +55,23 @@ def read_diff(repo: Repository, oid: str, parent: str | None) -> str:
     """Compare a commit to an actual parent (or empty tree for a root)."""
     if oid not in repo.commits or (parent is not None and parent not in repo.commits[oid].parents):
         raise ValueError('Invalid commit or parent')
-    common = ['git', '--no-replace-objects', '-C', repo.path]
     flags = ['--no-ext-diff', '--no-textconv', '--no-color', '--stat', '--patch']
     args = (['diff', *flags, parent, oid, '--'] if parent else
             ['show', '--format=', '--root', *flags, oid, '--'])
+    return _read_patch(repo, args) or 'No changes relative to this parent.'
+
+def read_commit_diff(repo: Repository, source: str, target: str) -> str:
+    """Compare the trees of any two loaded commits, from source to target."""
+    if source not in repo.commits or target not in repo.commits:
+        raise ValueError('Invalid comparison commit')
+    args = ['diff', '--no-ext-diff', '--no-textconv', '--no-color', '--stat', '--patch',
+            source, target, '--']
+    return _read_patch(repo, args) or 'No changes between these commits.'
+
+def _read_patch(repo: Repository, args: list[str]) -> str:
+    common = ['git', '--no-replace-objects', '-C', repo.path]
     result = subprocess.run(common + args, capture_output=True, encoding='utf-8',
                             errors='replace', timeout=120, env={**os.environ, 'GIT_OPTIONAL_LOCKS':'0'})
     if result.returncode:
         raise RuntimeError(result.stderr.strip())
-    return result.stdout or 'No changes relative to this parent.'
+    return result.stdout

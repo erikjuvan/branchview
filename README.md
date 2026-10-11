@@ -37,6 +37,8 @@ Alternatively run `python main.py` and use Open. On Arch Linux, installing
 - Double-click a node or its label to view its patch and diff statistics against
   its actual Git parent. Merge commits provide a parent selector. Root commits
   compare against the empty tree.
+- Select exactly two nodes, then right-click either node or its label and choose
+  Diff selected commits to compare their trees. The dialog lets you reverse the direction.
 - Space or Fit: fit entire graph. Click a commit: metadata and full message.
 - Click a collapsed-chain label: inspect hidden commits.
 - Double-click a chain label: expand it. Collapse all restores compact view.

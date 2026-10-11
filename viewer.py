@@ -1,9 +1,10 @@
 from PySide6.QtCore import Qt, QTimer
+from subprocess import TimeoutExpired
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QShortcut, QKeySequence
 from PySide6.QtWidgets import (QMainWindow, QGraphicsView, QGraphicsScene,
     QGraphicsEllipseItem, QGraphicsItem, QFileDialog, QMessageBox, QToolBar,
     QCheckBox, QTextEdit, QSplitter, QGraphicsTextItem, QMenu, QDialog, QVBoxLayout, QComboBox, QLabel)
-from git_reader import read_repository, read_diff
+from git_reader import read_repository, read_diff, read_commit_diff
 from graph import build_graph, hide_nodes
 from layout import layout
 
@@ -221,7 +222,45 @@ class Window(QMainWindow):
         menu = QMenu(self)
         action = menu.addAction('Hide node')
         action.triggered.connect(lambda: QTimer.singleShot(0, lambda: self.hide_node(oid)))
+        selected = {item.oid for item in self.scene.selectedItems() if isinstance(item, Node)}
+        if len(selected) == 2 and oid in selected:
+            source, target = [o for o in reversed(self.repo.commits) if o in selected]
+            action = menu.addAction('Diff selected commits…')
+            action.triggered.connect(lambda: QTimer.singleShot(0, lambda: self.show_commit_diff(source, target)))
         return menu
+    def show_commit_diff(self, source, target):
+        dialog = QDialog(self)
+        dialog.setWindowTitle('Diff between selected commits')
+        dialog.resize(1000, 700)
+        box = QVBoxLayout(dialog)
+        box.addWidget(QLabel('Compare commit trees. Choose a direction to reverse additions and deletions.'))
+        combo = QComboBox()
+        for before, after in [(source, target), (target, source)]:
+            combo.addItem(f'{before[:12]} → {after[:12]}', (before, after))
+        box.addWidget(combo)
+        summary = QLabel()
+        summary.setTextFormat(Qt.TextFormat.PlainText)
+        summary.setWordWrap(True)
+        box.addWidget(summary)
+        text = QTextEdit()
+        text.setReadOnly(True)
+        text.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        text.setStyleSheet('font-family: monospace;')
+        box.addWidget(text)
+        def refresh(*_):
+            before, after = combo.currentData()
+            descriptions = []
+            for label, o in [('From', before), ('To', after)]:
+                subject = self.repo.commits[o].message.split('\n')[0]
+                descriptions.append(f'{label}: {o}\n{subject}')
+            summary.setText('\n'.join(descriptions))
+            try:
+                text.setPlainText(read_commit_diff(self.repo, before, after))
+            except (RuntimeError, OSError, ValueError, TimeoutExpired) as exc:
+                text.setPlainText(f'Cannot load diff: {exc}')
+        combo.currentIndexChanged.connect(refresh)
+        refresh()
+        dialog.exec()
     def show_diff(self, oid):
         dialog = QDialog(self)
         dialog.setWindowTitle(f'Diff — {oid[:12]} against parent')
