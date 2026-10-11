@@ -5,7 +5,8 @@ from pathlib import Path
 import shutil
 import subprocess
 
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QSettings, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QLabel, QPushButton, QFileDialog,
                                QDialogButtonBox, QListWidget, QListWidgetItem)
 from PySide6.QtCore import Qt
@@ -118,9 +119,22 @@ class SnapshotCacheDialog(QDialog):
                 pass
         self.status = QLabel(f'{self.list.count()} cached snapshots')
         box.addWidget(self.status)
+        open_folder = QPushButton('Open snapshots folder')
+        open_folder.setToolTip(str(cache_directory()))
+        open_folder.clicked.connect(self.open_folder)
+        box.addWidget(open_folder)
         delete = QPushButton('Delete selected snapshot')
         delete.clicked.connect(self.delete_selected)
         box.addWidget(delete)
+
+    def open_folder(self):
+        try:
+            directory = cache_directory().resolve()
+            directory.mkdir(parents=True, exist_ok=True)
+            if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(directory))):
+                self.status.setText(f'Cannot open snapshots folder: {directory}')
+        except OSError as exc:
+            self.status.setText(str(exc))
 
     def delete_selected(self):
         item = self.list.currentItem()
