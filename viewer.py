@@ -299,14 +299,16 @@ class Window(QMainWindow):
         self.details.anchorClicked.connect(self.open_detail_link)
         self.inspected_selection = set()
         self.details.setPlainText('Open a Git repository.\n\nCommit details and comparison summaries appear here.\n\nWheel: zoom\nLeft-drag background: select multiple\nMiddle-drag: pan\nDrag a node or its label: rearrange\nDouble-click a node: diff\nDouble-click a chain label: expand')
-        self.shortcuts_panel = ShortcutPanel()
+        self.shortcuts_panel = ShortcutPanel(self)
+        self.help_shortcut = QShortcut(QKeySequence(Qt.Key.Key_F1), self)
+        self.help_shortcut.setAutoRepeat(False)
+        self.help_shortcut.activated.connect(self.shortcuts_panel.toggle)
         self.sidebar = QWidget()
         sidebar_layout = QVBoxLayout(self.sidebar)
         sidebar_layout.setContentsMargins(0, 0, 0, 0)
         sidebar_layout.setSpacing(0)
         self.repository_status = RepositoryStatusPanel(self)
         sidebar_layout.addWidget(self.repository_status, 0, Qt.AlignmentFlag.AlignTop)
-        sidebar_layout.addWidget(self.shortcuts_panel, 0, Qt.AlignmentFlag.AlignTop)
         self.branch_panel = BranchPanel()
         self.branch_panel.branch_clicked.connect(self.jump_to_branch)
         sidebar_content = QSplitter(Qt.Orientation.Vertical)
@@ -741,8 +743,7 @@ class Window(QMainWindow):
         node = self.nodes.get(oid)
         if node is None:
             return
-        # Publish only the final selection. An intermediate empty selection
-        # shrinks the shortcut panel and resets the branch list's scroll range.
+        # Publish only the final selection so details and shortcut help update once.
         with QSignalBlocker(self.scene):
             self.scene.clearSelection()
             node.setSelected(True)
@@ -1002,6 +1003,7 @@ class Window(QMainWindow):
         super().closeEvent(event)
     def shutdown(self):
         self.loader.cancel()
+        self.shortcuts_panel.close()
         self.repository_status.shutdown()
         self.details.cancel_pending()
         if self.search_dialog is not None:

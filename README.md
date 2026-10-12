@@ -109,10 +109,11 @@ larger initial budget or `--max-commits 0` for all history.
   again selects its existing tab. Ctrl+O opens, Ctrl+W closes the current tab,
   and Ctrl+Tab / Ctrl+Shift+Tab switch tabs. Graph shortcuts affect the active tab.
 
-- The fixed top section of the right sidebar lists available graph shortcuts.
+- F1 opens a compact shortcuts window with all available shortcuts and no scrolling.
+  Press F1 or Esc, or click its title-bar X, to close it.
   It updates with the selection: D diffs one commit or compares two; Delete is
   shown for any selection and requires graph focus. With three or more commits,
-  the panel explains how to enable D. Commit details scroll independently below.
+  the panel explains how to enable D. Commit details scroll independently in the sidebar.
 
 - Ctrl+F or Search: find loaded commits by hash, full message, or branch name.
   Enter or double-click jumps to the result, revealing collapsed or hidden nodes.

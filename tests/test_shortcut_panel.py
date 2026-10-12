@@ -1,6 +1,7 @@
 import unittest
-from PySide6.QtCore import QPoint
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from git_reader import Commit, Repository
@@ -56,6 +57,8 @@ class ShortcutPanelTest(unittest.TestCase):
         window.nodes[self.ids[0]].setSelected(True)
         self.app.processEvents()
         panel = window.shortcuts_panel
+        panel.toggle()
+        self.app.processEvents()
         bounds, entries = panel.geometry(), list(panel.entries)
         window.details.setPlainText('Long commit details\n'*2000)
         self.app.processEvents()
@@ -65,9 +68,66 @@ class ShortcutPanelTest(unittest.TestCase):
         self.assertEqual(panel.geometry(), bounds)
         self.assertEqual(panel.entries, entries)
         self.assertEqual(window.repository_status.geometry().top(), 0)
-        self.assertGreater(panel.geometry().top(), window.repository_status.geometry().bottom())
-        self.assertGreaterEqual(window.details.mapTo(window.sidebar, QPoint(0, 0)).y(), panel.geometry().bottom())
+        self.assertIs(panel.parentWidget(), window)
+        self.assertTrue(panel.isWindow())
         window.details.show_commit(window.repo, self.ids[0])
         self.app.processEvents()
         self.assertEqual(panel.entries, entries)
         self.assertTrue(panel.isVisible())
+
+    def show_window(self):
+        self.window.show()
+        self.window.activateWindow()
+        self.window.view.setFocus()
+        self.app.processEvents()
+
+    def test_f1_opens_and_closes_shortcuts_window(self):
+        self.show_window()
+        panel = self.window.shortcuts_panel
+        self.assertFalse(panel.isVisible())
+        QTest.keyClick(self.window.view, Qt.Key.Key_F1)
+        self.app.processEvents()
+        self.assertTrue(panel.isVisible())
+        self.assertFalse(panel.isModal())
+        self.assertEqual(panel.windowTitle(), 'Shortcuts')
+        QTest.keyClick(panel, Qt.Key.Key_F1)
+        self.app.processEvents()
+        self.assertFalse(panel.isVisible())
+        self.window.activateWindow()
+        self.window.details.setFocus()
+        self.app.processEvents()
+        QTest.keyClick(self.window.details, Qt.Key.Key_F1)
+        self.app.processEvents()
+        self.assertTrue(panel.isVisible())
+
+    def test_escape_and_window_close_allow_reopening(self):
+        self.show_window()
+        panel = self.window.shortcuts_panel
+        for close in (lambda: QTest.keyClick(panel, Qt.Key.Key_Escape), panel.close):
+            panel.toggle()
+            self.app.processEvents()
+            self.assertTrue(panel.isVisible())
+            self.assertTrue(panel.windowFlags() & Qt.WindowType.WindowCloseButtonHint)
+            close()
+            self.app.processEvents()
+            self.assertFalse(panel.isVisible())
+        panel.toggle()
+        self.app.processEvents()
+        self.window.close()
+        self.app.processEvents()
+        self.assertFalse(panel.isVisible())
+
+    def test_all_shortcuts_are_visible_and_update_in_open_window(self):
+        self.show_window()
+        panel = self.window.shortcuts_panel
+        panel.toggle()
+        self.window.nodes[self.ids[0]].setSelected(True)
+        self.app.processEvents()
+        self.assertIn('F1', self.entries())
+        self.assertIn('Diff selected commit', self.entries().values())
+        for row in range(len(panel.entries)):
+            for column in (0, 1):
+                label = panel.grid.itemAtPosition(row, column).widget()
+                self.assertTrue(label.isVisible())
+                self.assertTrue(panel.rect().contains(label.geometry()))
+        self.assertTrue(panel.rect().contains(panel.note.geometry()))

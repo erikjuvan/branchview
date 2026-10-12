@@ -1,22 +1,21 @@
-"""Selection-aware help that remains above the scrolling commit details."""
+"""Lightweight, selection-aware shortcut help window."""
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence
-from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout, QGridLayout, QSizePolicy
+from PySide6.QtWidgets import QDialog, QLabel, QVBoxLayout, QGridLayout
 
 
-class ShortcutPanel(QFrame):
-    def __init__(self):
-        super().__init__()
+class ShortcutPanel(QDialog):
+    def __init__(self, window):
+        super().__init__(window, Qt.WindowType.Tool | Qt.WindowType.CustomizeWindowHint |
+                         Qt.WindowType.WindowTitleHint | Qt.WindowType.WindowCloseButtonHint)
         self.setObjectName('ShortcutPanel')
-        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
-        self.setStyleSheet('QFrame#ShortcutPanel { background: #252526; border-bottom: 1px solid #3c3c3c; } '
+        self.setWindowTitle('Shortcuts')
+        self.setModal(False)
+        self.setStyleSheet('QDialog#ShortcutPanel { background: #252526; } '
                            'QLabel { background: transparent; }')
         box = QVBoxLayout(self)
-        box.setContentsMargins(10, 8, 10, 8)
-        box.setSpacing(4)
-        heading = QLabel('Available graph shortcuts')
-        heading.setStyleSheet('font-weight: bold; color: #80ead9;')
-        box.addWidget(heading)
+        box.setContentsMargins(12, 10, 12, 10)
+        box.setSpacing(6)
         self.summary = QLabel()
         self.summary.setWordWrap(True)
         box.addWidget(self.summary)
@@ -31,6 +30,29 @@ class ShortcutPanel(QFrame):
         self.note.setStyleSheet('color: #969696; font-size: 9pt;')
         box.addWidget(self.note)
         self.entries = []
+        self.setFixedWidth(440)
+
+    def toggle(self):
+        if self.isVisible():
+            self.close()
+        else:
+            self.update_context(self.parentWidget())
+            self.show()
+            self.raise_()
+            self.activateWindow()
+
+    def _resize_to_contents(self):
+        self.layout().invalidate()
+        height = self.layout().totalHeightForWidth(self.width())
+        self.setFixedHeight(max(height, self.layout().totalSizeHint().height()))
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_F1:
+            if not event.isAutoRepeat():
+                self.close()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
 
     def update_context(self, window):
         selected = {item.oid for item in window.scene.selectedItems() if hasattr(item, 'oid')}
@@ -65,19 +87,20 @@ class ShortcutPanel(QFrame):
         elif count > 2:
             note = 'Select one or two commits to use D. Delete requires graph focus.'
         elif count:
-            note = 'Delete requires graph focus. Commit details remain below.'
+            note = 'Delete requires graph focus. Commit details are in the sidebar.'
         else:
             note = 'Select a commit to enable diff and hide shortcuts.'
         if getattr(window, 'open_callback', None) is not None:
             for key, action in [('Ctrl+O', 'Open repositories from folder'), ('Ctrl+W', 'Close current repository tab'),
                                 ('Ctrl+Tab', 'Next repository tab'), ('Ctrl+Shift+Tab', 'Previous repository tab')]:
                 entries.append((QKeySequence(key).toString(QKeySequence.SequenceFormat.NativeText), action, ''))
-        self.note.setText(note)
+        entries.append(('F1', 'Show / hide shortcuts', 'Esc or the title-bar X also closes this window.'))
+        self.note.setText(note + '\nF1 or Esc closes this window.')
         if entries == self.entries:
+            self._resize_to_contents()
             return
         self.entries = entries
-        # Reuse rows so the panel never temporarily collapses while rebuilding.
-        # That would enlarge the branch list and clamp its scrollbar upward.
+        # Reuse rows to avoid flicker while selection-aware help changes.
         for row, (key, action, tooltip) in enumerate(entries):
             cell = self.grid.itemAtPosition(row, 0)
             if cell is None:
@@ -99,3 +122,4 @@ class ShortcutPanel(QFrame):
             widget = self.grid.takeAt(self.grid.count()-1).widget()
             widget.hide()
             widget.deleteLater()
+        self._resize_to_contents()
