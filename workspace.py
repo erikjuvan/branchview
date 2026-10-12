@@ -43,7 +43,7 @@ class WorkspaceWindow(QMainWindow):
         self.batch_pending = set()
         self.batch_queue = []
         self.batch_errors = []
-        self.setWindowTitle('Git Branch Viewer')
+        self.setWindowTitle('branchview')
         self.resize(1400, 900)
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(True)
@@ -207,7 +207,7 @@ class WorkspaceWindow(QMainWindow):
             if i != index and page.search_dialog is not None:
                 page.search_dialog.hide()
         page = self.tabs.widget(index)
-        self.setWindowTitle(f'{page.repository_path} — Git Branch Viewer' if page else 'Git Branch Viewer')
+        self.setWindowTitle(f'{page.repository_path} — branchview' if page else 'branchview')
         if page:
             self.addToolBar(page.graph_toolbar)
             self.addToolBarBreak()

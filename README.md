@@ -1,10 +1,10 @@
-# Git Branch Viewer
+# branchview
 
 Python 3.10+ desktop application. Requires Git on PATH and PySide6.
 
 ## Run
 
-Extract the ZIP, open a terminal inside `git_branch_viewer`, then:
+Extract the ZIP, open a terminal inside `branchview`, then:
 
 ```sh
 python -m venv .venv
@@ -268,6 +268,23 @@ working-tree diffs are outside the scope of this viewer. Detached HEAD commits
 and commit tags are included. History mode loads a bounded slice
 by default. Branch-only mode avoids history traversal. Layout is deterministic,
 but merge edges can cross and long labels can overlap in complicated histories.
+
+## Build a portable Windows executable
+
+Run in PowerShell from the project folder:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt pyinstaller
+.\.venv\Scripts\python.exe -m PyInstaller --onefile --windowed --name branchview main.py
+```
+
+Copy `dist\branchview.exe` to another Windows computer and run it without
+installing Python or PySide6. Git must still be installed and available on PATH.
+Launch it directly to choose a repository, or pass a repository path as an argument.
+
+Existing settings and cached commit snapshots retain their legacy
+`GitBranchViewer` storage name so they remain available after the rename.
 
 ## Verification
 

@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QApplication
 from workspace import WorkspaceWindow
 
 def main():
-    parser = argparse.ArgumentParser(description='Read-only Git history and branch graphs')
+    parser = argparse.ArgumentParser(description='branchview: read-only Git history and branch graphs')
     parser.add_argument('--presentation', choices=['regular', 'terminal', 'all'], default='regular',
                         help='History layout (default: regular; one commit per row)')
     parser.add_argument('repository', nargs='?', help='Repository or folder containing repositories')
@@ -19,6 +19,8 @@ def main():
     if args.max_commits < 0:
         parser.error('--max-commits must be non-negative')
     app = QApplication(sys.argv[:1])
+    app.setApplicationName('branchview')
+    app.setApplicationDisplayName('branchview')
     if hasattr(app.styleHints(), 'setColorScheme'):
         app.styleHints().setColorScheme(Qt.ColorScheme.Dark)
     window = WorkspaceWindow(args.repository, recursive=args.recursive, branches_only=args.branches_only, history_limit=args.max_commits or None,

@@ -263,7 +263,7 @@ class Window(QMainWindow):
             QSplitter::handle { background: #3c3c3c; }
             QToolTip { background: #252526; color: #cccccc; border: 1px solid #454545; }
         """)
-        self.setWindowTitle('Git Branch Viewer')
+        self.setWindowTitle('branchview')
         self.resize(1200,800)
         self.scene = QGraphicsScene(self)
         self.scene.setBackgroundBrush(QColor('#1e1e1e'))
@@ -947,7 +947,7 @@ class Window(QMainWindow):
                 'regular history · one commit per row' if self.repo.regular_history else
                 'named branch tips · all on top' if self.repo.all_branch_tips else 'terminal tips')
         self.statusBar().showMessage(f'{self.repo.path} · {len(graph.nodes) if regular else len(graph.tips)} {mode} · {len(self.repo.commits)} loaded commits{suffix}')
-        self.setWindowTitle(f'Git Branch Viewer — {self.repo.path}')
+        self.setWindowTitle(f'branchview — {self.repo.path}')
         if not graph.tips:
             self.details.setPlainText('No commit refs found. This repository has no commits yet.')
         if update_shortcuts:
