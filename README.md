@@ -62,8 +62,11 @@ larger initial budget or `--max-commits 0` for all history.
   CLI: `--presentation regular|terminal|all`; `--all-branch-tips` still selects all.
 
 - The right sidebar has **All refs**, **Branches**, **Tags**, and **Worktrees** tabs with a shared
-  name filter. All refs pins **HEAD** first, showing the current branch or detached
-  state for the checkout open in this repository tab. The current branch is bold;
+  name filter. All refs pins the current branch first with a **[HEAD]** marker,
+  combining HEAD and its branch in one row for the checkout open in this repository tab.
+  Detached HEAD has a separate pinned row with its short commit hash, even when a
+  branch or tag points to the same commit. Empty repositories show HEAD's branch
+  with **(no commits yet)** and disable commit navigation. The current branch is bold;
   HEAD is purple and tags are gold. Remote branches follow **Include remote branches**.
   Click a ref (or select it and press Enter) to reveal its commit and zoom to a
   readable view. Hidden or collapsed commits are revealed. The graph marks the

@@ -14,6 +14,50 @@ from ui_helpers import application, wait_for_load
 
 
 class BranchPanelTest(unittest.TestCase):
+    def test_current_branch_is_pinned_once_and_keeps_branch_navigation(self):
+        oid = '1'*40
+        repo = Repository('synthetic', {}, {oid: ['alias', 'z-current', 'origin/z-current']},
+                          branch_refs={'origin/z-current': 'refs/remotes/origin/z-current'},
+                          head_oid=oid, head_ref='refs/heads/z-current', tags={'release': oid})
+        panel = BranchPanel()
+        self.addCleanup(panel.close)
+        panel.set_repository(repo)
+        current = panel.list.item(0)
+        self.assertEqual(current.text(), 'z-current [HEAD]')
+        self.assertEqual(current.data(Qt.ItemDataRole.UserRole+2), 'refs/heads/z-current')
+        self.assertTrue(current.font().bold())
+        self.assertEqual(current.foreground().color().name(), '#c792ea')
+        self.assertEqual(panel.heading.text(), 'All refs (4)')
+        activations = []
+        panel.branch_clicked.connect(lambda *args: activations.append(args))
+        panel.activate(current)
+        self.assertEqual(activations, [('z-current', oid)])
+        panel.list.setCurrentItem(current)
+        panel.set_repository(replace(repo))
+        self.assertEqual(panel.list.currentItem().text(), 'z-current [HEAD]')
+        panel.tabs.setCurrentIndex(1)
+        self.assertEqual(panel.heading.text(), 'Branches (3)')
+        panel.filter.setText('HEAD')
+        self.assertEqual([panel.list.item(i).text() for i in range(panel.list.count())
+                          if not panel.list.item(i).isHidden()], ['z-current [HEAD]'])
+
+    def test_detached_head_stays_separate_from_refs_at_the_same_commit(self):
+        oid = '1'*40
+        panel = BranchPanel()
+        self.addCleanup(panel.close)
+        panel.set_repository(Repository('synthetic', {}, {oid: ['main']}, head_oid=oid,
+                                        tags={'release': oid}))
+        self.assertEqual(panel.list.item(0).text(), 'HEAD (detached) · '+oid[:8])
+        self.assertEqual(panel.heading.text(), 'All refs (3)')
+        self.assertEqual(panel.list.item(1).text(), 'main')
+        self.assertFalse(panel.list.item(1).font().bold())
+        activations = []
+        panel.branch_clicked.connect(lambda *args: activations.append(args))
+        panel.activate(panel.list.item(0))
+        self.assertEqual(activations, [('HEAD', oid)])
+        panel.tabs.setCurrentIndex(1)
+        self.assertTrue(panel.list.item(0).isHidden())
+
     def test_bottom_branch_click_keeps_viewport_during_shortcut_updates(self):
         for branches_only in (True, False):
             with self.subTest(branches_only=branches_only):
@@ -101,7 +145,7 @@ class BranchPanelTest(unittest.TestCase):
                 wait_for_load(window)
                 panel = window.branch_panel
                 self.assertEqual({panel.list.item(i).text() for i in range(panel.list.count())
-                                  if not panel.list.item(i).isHidden()}, {'HEAD → main', 'main', 'merged-old'})
+                                  if not panel.list.item(i).isHidden()}, {'main [HEAD]', 'merged-old'})
                 self.assertNotIn(middle, window.nodes)
                 item = next(panel.list.item(i) for i in range(panel.list.count()) if panel.list.item(i).text() == 'merged-old')
                 panel.activate(item)
@@ -121,7 +165,7 @@ class BranchPanelTest(unittest.TestCase):
                 window.remote.setChecked(False)
                 wait_for_load(window)
                 panel.filter.clear()
-                self.assertEqual(sum(not panel.list.item(i).isHidden() for i in range(panel.list.count())), 3)
+                self.assertEqual(sum(not panel.list.item(i).isHidden() for i in range(panel.list.count())), 2)
             finally:
                 window.close()
                 application.processEvents()

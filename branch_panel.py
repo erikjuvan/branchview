@@ -111,12 +111,19 @@ class BranchPanel(QWidget):
         self.list.clear()
         branches = [(name, oid, repo.branch_refs.get(name, 'refs/heads/'+name))
                     for oid, names in repo.branches.items() for name in names] if repo else []
-        branches.sort(key=lambda entry: (entry[2].startswith('refs/remotes/'), entry[0].casefold()))
+        branches.sort(key=lambda entry: (entry[2] != repo.head_ref, entry[2].startswith('refs/remotes/'),
+                                         entry[0].casefold()))
         entries = []
-        if repo and repo.head_oid:
-            location = repo.head_ref.removeprefix('refs/heads/') if repo.head_ref else 'detached'
-            entries.append(('HEAD', repo.head_oid, 'HEAD', 'head', 'HEAD → '+location))
-        entries.extend((name, oid, ref, 'branch', name) for name, oid, ref in branches)
+        if repo and (repo.head_oid or repo.head_ref) and not any(ref == repo.head_ref for _, _, ref in branches):
+            if not repo.head_oid:
+                label = 'HEAD → '+repo.head_ref.removeprefix('refs/heads/')+' (no commits yet)'
+            elif not repo.head_ref:
+                label = 'HEAD (detached) · '+repo.head_oid[:8]
+            else:
+                label = 'HEAD → '+repo.head_ref.removeprefix('refs/heads/')
+            entries.append(('HEAD', repo.head_oid, 'HEAD', 'head', label))
+        entries.extend((name, oid, ref, 'branch', name+' [HEAD]' if ref == repo.head_ref else name)
+                       for name, oid, ref in branches)
         if repo:
             entries.extend((name, oid, 'refs/tags/'+name, 'tag', 'tag: '+name)
                            for name, oid in sorted(repo.tags.items(), key=lambda entry: entry[0].casefold()))
@@ -134,9 +141,11 @@ class BranchPanel(QWidget):
             item.setData(Qt.ItemDataRole.UserRole, (name, oid))
             item.setData(Qt.ItemDataRole.UserRole+1, kind)
             item.setData(Qt.ItemDataRole.UserRole+2, ref)
-            item.setToolTip(f'{ref}\n{oid}')
+            item.setToolTip(f'{ref}\n{oid}' if oid else ref+'\nNo commits yet')
+            if kind == 'head' and not oid:
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
             remote = remote_name(repo, name) if kind == 'branch' else None
-            color = '#c792ea' if kind == 'head' else '#d8ab65' if kind == 'tag' else '#75baff'
+            color = '#c792ea' if kind == 'head' or ref == repo.head_ref else '#d8ab65' if kind == 'tag' else '#75baff'
             item.setForeground(remote_color(remote) if remote is not None else QColor(color))
             if kind == 'head' or ref == repo.head_ref:
                 font = item.font()

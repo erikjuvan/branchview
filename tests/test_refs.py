@@ -4,7 +4,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from PySide6.QtTest import QTest
+from PySide6.QtCore import Qt
 
+from branch_panel import BranchPanel
 from git_reader import read_repository
 from graph import build_graph
 from viewer import Window
@@ -53,7 +55,7 @@ class RefsTest(unittest.TestCase):
                         window.show()
                         QTest.qWait(30)
                         panel = window.branch_panel
-                        self.assertEqual(panel.list.item(0).text(), 'HEAD → detached')
+                        self.assertEqual(panel.list.item(0).text(), 'HEAD (detached) · '+head[:8])
                         self.assertTrue(any(label.toPlainText() == 'HEAD (detached)' for label in window.labels))
                         self.assertTrue(any(label.toPlainText() == 'tag: release' for label in window.labels))
                         panel.tabs.setCurrentIndex(2)
@@ -88,7 +90,7 @@ class RefsTest(unittest.TestCase):
             window.repo = main_repo
             window.render()
             branch = next(window.branch_panel.list.item(i) for i in range(window.branch_panel.list.count())
-                          if window.branch_panel.list.item(i).text() == 'main')
+                          if window.branch_panel.list.item(i).text() == 'main [HEAD]')
             self.assertTrue(branch.font().bold())
             head_label = next(label for label in window.labels if label.toPlainText() == 'HEAD')
             self.assertEqual(head_label.parentItem().oid, tip)
@@ -96,7 +98,7 @@ class RefsTest(unittest.TestCase):
             git(self.path, 'checkout', '-b', 'alternative', self.root)
             window.repo = read_repository(str(self.path))
             window.render()
-            self.assertEqual(window.branch_panel.list.item(0).text(), 'HEAD → alternative')
+            self.assertEqual(window.branch_panel.list.item(0).text(), 'alternative [HEAD]')
             head_label = next(label for label in window.labels if label.toPlainText() == 'HEAD')
             self.assertEqual(head_label.parentItem().oid, self.root)
             branch = next(window.branch_panel.list.item(i) for i in range(window.branch_panel.list.count())
@@ -117,3 +119,13 @@ class RefsTest(unittest.TestCase):
         self.assertIsNone(repo.head_oid)
         self.assertEqual(repo.head_ref, 'refs/heads/main')
         self.assertEqual(build_graph(repo).nodes, set())
+        panel = BranchPanel()
+        self.addCleanup(panel.close)
+        panel.set_repository(repo)
+        self.assertEqual(panel.heading.text(), 'All refs (1)')
+        self.assertEqual(panel.list.item(0).text(), 'HEAD → main (no commits yet)')
+        self.assertFalse(panel.list.item(0).flags() & Qt.ItemFlag.ItemIsEnabled)
+        activations = []
+        panel.branch_clicked.connect(lambda *args: activations.append(args))
+        panel.activate(panel.list.item(0))
+        self.assertEqual(activations, [])

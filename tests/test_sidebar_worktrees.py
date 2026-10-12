@@ -74,7 +74,7 @@ class SidebarWorktreesTest(unittest.TestCase):
             self.assertNotIn('missing directory', basic)
             panel.set_repository(repo)
             items = {panel.list.item(i).text(): panel.list.item(i) for i in range(panel.list.count())}
-            self.assertEqual(items['main'].data(BADGE_ROLE), '[WT · here]')
+            self.assertEqual(items['main [HEAD]'].data(BADGE_ROLE), '[WT · here]')
             self.assertEqual(items['feature'].data(BADGE_ROLE), '[WT]')
             self.assertEqual(items['feature'].foreground().color().name(), '#c792ea')
             self.assertIn('Locked: in use', items['feature'].toolTip())
