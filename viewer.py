@@ -20,6 +20,7 @@ from vscode_open import SnapshotOpenDialog
 from branch_panel import BranchPanel
 from branch_colors import remote_name, remote_color
 from repository_status_panel import RepositoryStatusPanel
+from repository_open import RepositoryOpenPanel
 from theme import apply_dark_theme
 
 class View(QGraphicsView):
@@ -309,8 +310,11 @@ class Window(QMainWindow):
         sidebar_layout.setSpacing(0)
         self.repository_status = RepositoryStatusPanel(self)
         sidebar_layout.addWidget(self.repository_status, 0, Qt.AlignmentFlag.AlignTop)
+        self.repository_open = RepositoryOpenPanel(self)
+        sidebar_layout.addWidget(self.repository_open)
         self.branch_panel = BranchPanel()
         self.branch_panel.branch_clicked.connect(self.jump_to_branch)
+        self.branch_panel.worktree_clicked.connect(self.open_worktree_context)
         sidebar_content = QSplitter(Qt.Orientation.Vertical)
         sidebar_content.addWidget(self.branch_panel)
         sidebar_content.addWidget(self.details)
@@ -803,6 +807,7 @@ class Window(QMainWindow):
                 label.setPos(x, y)
                 reserve(label.sceneBoundingRect().adjusted(-4,-4,4,4))
     def render(self, update_shortcuts=True):
+        self.repository_open.set_context(self.repo, set())
         self.branch_panel.set_repository(self.repo)
         self.details.cancel_pending()
         self.details.setPlainText('Select a commit to inspect its history and changes.')
@@ -950,9 +955,10 @@ class Window(QMainWindow):
     def inspect(self):
         self.update_selection_highlights()
         self.shortcuts_panel.update_context(self)
+        selected = {item.oid for item in self.scene.selectedItems() if isinstance(item, Node)}
+        self.repository_open.set_context(self.repo, selected)
         if not self.repo:
             return
-        selected = {item.oid for item in self.scene.selectedItems() if isinstance(item, Node)}
         newly_selected = selected - self.inspected_selection
         self.inspected_selection = selected
         if len(selected) > 1:
@@ -968,6 +974,9 @@ class Window(QMainWindow):
         else:
             self.details.cancel_pending()
             self.details.setPlainText('Select a commit to inspect its history and changes.')
+    def open_worktree_context(self, path):
+        self.repository_open.set_context(self.repo, self.inspected_selection, path)
+
     def open_detail_link(self, url):
         parsed = urlsplit(url.toString())
         if parsed.scheme == 'compare':
@@ -992,6 +1001,7 @@ class Window(QMainWindow):
                 self.view.centerOn(node)
             else:
                 self.details.show_commit(self.repo, oid)
+                self.repository_open.set_context(self.repo, {oid})
         elif parsed.scheme == 'diff':
             info = self.details.cache.get(oid)
             if oid in self.repo.commits or info is not None:

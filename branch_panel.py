@@ -122,6 +122,7 @@ class BranchList(QListWidget):
 
 class BranchPanel(QWidget):
     branch_clicked = Signal(str, str)
+    worktree_clicked = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -278,4 +279,8 @@ class BranchPanel(QWidget):
         if not item.flags() & Qt.ItemFlag.ItemIsEnabled:
             return
         name, oid = item.data(Qt.ItemDataRole.UserRole)
+        worktree = (item.data(Qt.ItemDataRole.UserRole+2).removeprefix('worktree:')
+                    if item.data(Qt.ItemDataRole.UserRole+1) == 'worktree' else None)
         self.branch_clicked.emit(name, oid)
+        if worktree is not None:
+            self.worktree_clicked.emit(worktree)

@@ -41,6 +41,17 @@ larger initial budget or `--max-commits 0` for all history.
 
 ## Controls
 
+- **Explorer**, **VS Code**, and **Git Extensions** above the sidebar open the
+  current repository folder with one click. When one selected commit matches a
+  worktree's HEAD, the buttons open that checkout and turn purple when it is a
+  different folder from the current repo. Older commits keep the current repo
+  as the target. Multiple exact checkouts offer a chooser.
+  Clicking a Worktrees row targets that checkout directly.
+  Each button's arrow also lets you choose the current repo or any available
+  worktree. Tooltips show full target paths. VS Code and Git Extensions are found
+  automatically, or you can locate their executable once when first opening them.
+  These buttons open live folders; V continues to open a cached commit snapshot.
+
 - The top of the right sidebar summarizes the current checkout: branch or detached
   HEAD, upstream and locally known ahead/behind counts, staged/unstaged/untracked
   file counts, conflicts, and operations in progress. A file with both staged and
