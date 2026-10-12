@@ -1,8 +1,9 @@
 """Searchable refs and worktree checkouts in the current repository snapshot."""
 from pathlib import Path
-from PySide6.QtCore import Qt, Signal, QSize, QTimer
+import os
+from PySide6.QtCore import Qt, Signal, QSize, QTimer, QRect, QPointF
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QTabBar, QStyledItemDelegate, QStyleOptionViewItem, QStyle, QApplication
-from PySide6.QtGui import QColor, QPen
+from PySide6.QtGui import QColor, QPen, QFont, QFontMetrics
 from branch_colors import remote_name, remote_color
 from git_reader import opened_worktree
 from theme import TAB_STYLESHEET
@@ -10,35 +11,84 @@ from theme import TAB_STYLESHEET
 
 BADGE_ROLE = Qt.ItemDataRole.UserRole+3
 SEARCH_ROLE = Qt.ItemDataRole.UserRole+4
+PATH_ROLE = Qt.ItemDataRole.UserRole+5
+DETAILS_ROLE = Qt.ItemDataRole.UserRole+6
+
+
+def worktree_path(root, path):
+    """Use relative paths, including siblings; different drives stay absolute."""
+    try:
+        return Path(os.path.relpath(path, root)).as_posix()
+    except ValueError:
+        return Path(path).as_posix()
 
 
 class WorktreeBadgeDelegate(QStyledItemDelegate):
     def paint(self, painter, option, index):
         badge = index.data(BADGE_ROLE)
-        if not badge:
+        paths = index.data(PATH_ROLE) or []
+        details = index.data(DETAILS_ROLE)
+        if not badge and not paths:
             return super().paint(painter, option, index)
         styled = QStyleOptionViewItem(option)
         self.initStyleOption(styled, index)
-        width = styled.fontMetrics.horizontalAdvance(badge)+12
+        badge_width = styled.fontMetrics.horizontalAdvance(badge)+12 if badge else 0
+        bracket_font = QFont(styled.font)
+        bracket_font.setBold(False)
+        bracket_font.setItalic(False)
+        bracket_metrics = QFontMetrics(bracket_font)
+        bracket_width = bracket_metrics.horizontalAdvance('[')+bracket_metrics.horizontalAdvance(']')
+        path_font = QFont(bracket_font)
+        path_font.setItalic(True)
+        path_metrics = QFontMetrics(path_font)
+        path = ', '.join(paths).replace('\n', ' ')
+        path_width = min(path_metrics.horizontalAdvance(path)+bracket_width+12,
+                         int(option.rect.width()*0.45),
+                         max(0, option.rect.width()-badge_width-40)) if paths else 0
+        width = badge_width+path_width+(6 if badge_width and path_width else 0)
+        parts = [styled.text, *([details] if details else [])]
+        styled.text = ' · '.join(part.replace('\n', ' ') for part in parts)
         styled.text = styled.fontMetrics.elidedText(styled.text, Qt.TextElideMode.ElideRight,
                                                    max(0, styled.rect.width()-width-12))
         style = styled.widget.style() if styled.widget else QApplication.style()
         style.drawControl(QStyle.ControlElement.CE_ItemViewItem, styled, painter, styled.widget)
-        rect = option.rect.adjusted(option.rect.width()-width-4, 2, -4, -2)
         painter.save()
         painter.setFont(styled.font)
-        active = badge.startswith('[WT')
-        painter.setPen(QPen(QColor('#c792ea' if active else '#969696')))
-        painter.setBrush(QColor('#3a2b48' if active else '#303030'))
-        painter.drawRoundedRect(rect, 3, 3)
-        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, badge)
+        right = option.rect.right()-4
+        if path_width:
+            rect = QRect(right-path_width+1, option.rect.top()+2, path_width, option.rect.height()-4)
+            painter.setFont(path_font)
+            painter.setPen(QPen(QColor('#b5a1c4')))
+            painter.setBrush(QColor('#3a2b48'))
+            painter.drawRoundedRect(rect, 3, 3)
+            path = path_metrics.elidedText(path, Qt.TextElideMode.ElideMiddle,
+                                          max(0, path_width-bracket_width-12))
+            text_width = path_metrics.horizontalAdvance(path)+bracket_width
+            x = rect.left()+(rect.width()-text_width)/2
+            baseline = rect.top()+(rect.height()-path_metrics.height())/2+path_metrics.ascent()
+            painter.setFont(bracket_font)
+            painter.drawText(QPointF(x, baseline), '[')
+            x += bracket_metrics.horizontalAdvance('[')
+            painter.setFont(path_font)
+            painter.drawText(QPointF(x, baseline), path)
+            x += path_metrics.horizontalAdvance(path)
+            painter.setFont(bracket_font)
+            painter.drawText(QPointF(x, baseline), ']')
+            right -= path_width+6
+        if badge:
+            painter.setFont(styled.font)
+            rect = QRect(right-badge_width+1, option.rect.top()+2, badge_width, option.rect.height()-4)
+            active = badge.startswith('[WT')
+            painter.setPen(QPen(QColor('#c792ea' if active else '#969696')))
+            painter.setBrush(QColor('#3a2b48' if active else '#303030'))
+            painter.drawRoundedRect(rect, 3, 3)
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, badge)
         painter.restore()
 
     def sizeHint(self, option, index):
         size = super().sizeHint(option, index)
-        badge = index.data(BADGE_ROLE)
-        width = option.fontMetrics.horizontalAdvance(badge)+20 if badge else 0
-        return QSize(size.width()+width, max(size.height(), option.fontMetrics.height()+8))
+        # Rows fit the sidebar; long labels and paths are elided by paint().
+        return QSize(0, max(size.height(), option.fontMetrics.height()+8))
 
 
 class BranchList(QListWidget):
@@ -135,7 +185,12 @@ class BranchPanel(QWidget):
                 location = wt.branch.removeprefix('refs/heads/') if wt.branch else 'bare' if wt.bare else 'detached HEAD'
                 ref = 'worktree:'+wt.path
                 worktree_entries[ref] = wt
-                entries.append((folder, wt.head, ref, 'worktree', folder+' — '+location))
+                label = (location+' [HEAD]' if wt == opened and wt.branch else location)
+                if wt.detached:
+                    label = 'HEAD (detached) · '+wt.head[:8]
+                if not wt.active and not wt.bare and wt.prunable is None:
+                    label += ' (no commits yet)'
+                entries.append((folder, wt.head, ref, 'worktree', label))
         for name, oid, ref, kind, label in entries:
             item = QListWidgetItem(label)
             item.setData(Qt.ItemDataRole.UserRole, (name, oid))
@@ -155,15 +210,22 @@ class BranchPanel(QWidget):
             if remote is not None:
                 item.setToolTip(item.toolTip()+'\nRemote: '+remote)
             trees = ([worktree_entries[ref]] if kind == 'worktree' else
-                     [wt for wt in repo.worktrees if wt.active and wt.branch == ref] if kind == 'branch' else [])
+                     [wt for wt in repo.worktrees if wt.branch == ref] if kind == 'branch' else
+                     [opened] if kind == 'head' and opened else [])
             if trees:
                 active = [wt for wt in trees if wt.active]
                 wt = trees[0]
                 badge = ('[WT · here]' if opened in active else '[WT]' if active else
                          '[prunable]' if wt.prunable is not None else '[bare]' if wt.bare else '[empty]')
                 item.setData(BADGE_ROLE, badge)
+                paths = [worktree_path(repo.path, wt.path) for wt in trees]
+                item.setData(PATH_ROLE, paths)
                 if active:
                     item.setForeground(QColor('#c792ea'))
+                if kind == 'worktree' and wt == opened:
+                    font = item.font()
+                    font.setBold(True)
+                    item.setFont(font)
                 for wt in trees:
                     status = 'Main worktree' if wt.main else 'Linked worktree'
                     if wt == opened:
@@ -173,13 +235,22 @@ class BranchPanel(QWidget):
                     if wt.prunable is not None:
                         status += '\nPrunable: '+wt.prunable
                     item.setToolTip(item.toolTip()+'\n'+status+'\n'+wt.path)
-                item.setData(SEARCH_ROLE, label+' '+ ' '.join(wt.path for wt in trees))
+                if kind == 'worktree':
+                    wt = trees[0]
+                    details = ['Main worktree' if wt.main else 'Linked worktree']
+                    if wt.locked is not None:
+                        details.append('Locked'+(': '+wt.locked if wt.locked else ''))
+                    if wt.prunable is not None:
+                        details.append('Prunable'+(': '+wt.prunable if wt.prunable else ''))
+                    item.setData(DETAILS_ROLE, ' · '.join(details))
+                item.setData(SEARCH_ROLE, label+' '+' '.join(paths)+' '+ ' '.join(wt.path for wt in trees))
                 if kind == 'worktree' and not active:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
             self.list.addItem(item)
             if ref == selected_ref:
                 selected_item = item
         self.heading.setToolTip('HEAD and active worktrees: purple. [WT · here]: opened checkout. Current branch: bold.\n'
+                                'Worktree paths are relative to the current project root (.); full paths are in tooltips.\n'
                                 'Local branches: blue. Remote branches: teal. Tags: gold.')
         self.filter_branches(self.filter.text())
         self.list.setCurrentItem(selected_item)
@@ -191,7 +262,8 @@ class BranchPanel(QWidget):
 
     def filter_branches(self, query):
         category = (None, 'branch', 'tag', 'worktree')[self.tabs.currentIndex()]
-        self.filter.setPlaceholderText('Filter worktrees or paths…' if category == 'worktree' else 'Filter refs…')
+        self.filter.setPlaceholderText('Filter worktrees or paths…' if category == 'worktree' else
+                                       'Filter refs…' if category == 'tag' else 'Filter refs or paths…')
         count = 0
         for index in range(self.list.count()):
             item = self.list.item(index)

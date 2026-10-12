@@ -1,4 +1,5 @@
 import tempfile
+import os
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -6,7 +7,7 @@ from unittest.mock import patch
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 
-from branch_panel import BranchPanel, BADGE_ROLE
+from branch_panel import BranchPanel, BADGE_ROLE, PATH_ROLE, DETAILS_ROLE, worktree_path
 from commit_info import read_commit_info
 from commit_sidebar import render_basic, render_info
 from git_reader import Commit, Repository, Worktree, read_repository
@@ -17,6 +18,27 @@ from viewer import Window
 
 
 class SidebarWorktreesTest(unittest.TestCase):
+    def test_relative_paths_and_detached_opened_checkout(self):
+        root = Path(tempfile.gettempdir())/'sidebar-paths'
+        self.assertEqual(worktree_path(str(root), str(root)), '.')
+        self.assertEqual(worktree_path(str(root), str(root/'nested'/'checkout')), 'nested/checkout')
+        self.assertEqual(worktree_path(str(root), str(root.parent/'sibling')), '../sibling')
+        if os.name == 'nt':
+            self.assertEqual(worktree_path('C:/project', 'D:/checkout'), 'D:/checkout')
+        oid = '1'*40
+        panel = BranchPanel()
+        self.addCleanup(panel.close)
+        panel.set_repository(Repository(str(root), {}, {}, head_oid=oid,
+                                        worktrees=[Worktree(str(root), oid, detached=True, main=True)]))
+        head = panel.list.item(0)
+        self.assertEqual(head.data(PATH_ROLE), ['.'])
+        self.assertEqual(head.data(BADGE_ROLE), '[WT · here]')
+        panel.tabs.setCurrentIndex(3)
+        worktree = next(panel.list.item(i) for i in range(panel.list.count())
+                        if not panel.list.item(i).isHidden())
+        self.assertEqual(worktree.text(), head.text())
+        self.assertEqual(worktree.data(PATH_ROLE), head.data(PATH_ROLE))
+
     def test_worktree_click_preserves_bottom_scroll(self):
         ids = [f'{i:040x}' for i in range(1, 24)]
         root = Path(tempfile.gettempdir())/'worktree-scroll'
@@ -40,7 +62,7 @@ class SidebarWorktreesTest(unittest.TestCase):
                     scrollbar.setValue(scrollbar.maximum())
                     scroll = scrollbar.value()
                     item = next(panel.list.item(i) for i in range(panel.list.count())
-                                if panel.list.item(i).text() == f'checkout-{row:02} — detached HEAD')
+                                if panel.list.item(i).data(PATH_ROLE) == [f'../checkout-{row:02}'])
                     rect = panel.list.visualItemRect(item)
                     self.assertGreater(scroll, 0)
                     self.assertTrue(panel.list.viewport().rect().contains(rect))
@@ -73,18 +95,34 @@ class SidebarWorktreesTest(unittest.TestCase):
             self.assertLess(basic.index(main), basic.index(linked))
             self.assertNotIn('missing directory', basic)
             panel.set_repository(repo)
-            items = {panel.list.item(i).text(): panel.list.item(i) for i in range(panel.list.count())}
+            all_items = [panel.list.item(i) for i in range(panel.list.count())]
+            items = {item.text(): item for item in all_items
+                     if item.data(Qt.ItemDataRole.UserRole+1) != 'worktree'}
             self.assertEqual(items['main [HEAD]'].data(BADGE_ROLE), '[WT · here]')
             self.assertEqual(items['feature'].data(BADGE_ROLE), '[WT]')
+            self.assertEqual(items['main [HEAD]'].data(PATH_ROLE), ['.'])
+            self.assertEqual(items['feature'].data(PATH_ROLE), ['../linked'])
+            for tab in (0, 1):
+                panel.tabs.setCurrentIndex(tab)
+                panel.filter.setText('../linked')
+                self.assertEqual([item.text() for item in items.values() if not item.isHidden()], ['feature'])
+            panel.filter.clear()
             self.assertEqual(items['feature'].foreground().color().name(), '#c792ea')
             self.assertIn('Locked: in use', items['feature'].toolTip())
             self.assertIn(linked, items['feature'].toolTip())
-            for name in ('alias', 'origin/main', 'gone', 'tag: release'):
+            self.assertEqual(items['gone'].data(BADGE_ROLE), '[prunable]')
+            self.assertEqual(items['gone'].data(PATH_ROLE), ['../gone'])
+            for name in ('alias', 'origin/main', 'tag: release'):
                 self.assertIsNone(items[name].data(BADGE_ROLE))
             panel.tabs.setCurrentIndex(3)
-            visible = [item for item in items.values() if not item.isHidden()]
+            visible = [item for item in all_items if not item.isHidden()]
             self.assertEqual(len(visible), 4)
-            self.assertEqual(visible[0].text(), 'main — main')
+            self.assertEqual(visible[0].text(), 'main [HEAD]')
+            self.assertEqual(visible[0].data(PATH_ROLE), ['.'])
+            self.assertEqual(visible[0].data(DETAILS_ROLE), 'Main worktree')
+            feature = next(item for item in visible if item.text() == 'feature')
+            self.assertEqual(feature.data(PATH_ROLE), items['feature'].data(PATH_ROLE))
+            self.assertEqual(feature.data(DETAILS_ROLE), 'Linked worktree · Locked: in use')
             unavailable = [item for item in visible if not item.flags() & Qt.ItemFlag.ItemIsEnabled]
             self.assertEqual(len(unavailable), 2)
             activations = []
@@ -93,7 +131,9 @@ class SidebarWorktreesTest(unittest.TestCase):
                 panel.activate(item)
             self.assertEqual(activations, [])
             panel.filter.setText(linked)
-            self.assertEqual([item.text() for item in items.values() if not item.isHidden()], ['linked — feature'])
+            self.assertEqual([item.text() for item in all_items if not item.isHidden()], ['feature'])
+            panel.filter.setText('../linked')
+            self.assertEqual([item.text() for item in all_items if not item.isHidden()], ['feature'])
         finally:
             panel.close()
 
@@ -121,7 +161,7 @@ class SidebarWorktreesTest(unittest.TestCase):
                             panel = window.branch_panel
                             panel.tabs.setCurrentIndex(3)
                             item = next(panel.list.item(i) for i in range(panel.list.count())
-                                        if panel.list.item(i).text() == 'detached — detached HEAD')
+                                        if panel.list.item(i).data(PATH_ROLE) == ['../detached'])
                             panel.list.setCurrentItem(item)
                             rect = panel.list.visualItemRect(item)
                             QTest.mouseClick(panel.list.viewport(), Qt.MouseButton.LeftButton, pos=rect.center())

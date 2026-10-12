@@ -72,9 +72,14 @@ larger initial budget or `--max-commits 0` for all history.
   readable view. Hidden or collapsed commits are revealed. The graph marks the
   current checkout with **HEAD** and shows tag names beside their commits.
   Checked-out branches have purple **[WT]** badges; **[WT · here]** identifies the
-  opened checkout. Tooltips show worktree paths, main/linked status and lock reasons.
-  The Worktrees tab lists folders and checked-out branches, including detached HEADs;
-  search also matches their paths. Click an active worktree to reveal its HEAD.
+  opened checkout. Entries use a single line for labels, paths, status and badges.
+  Paths appear italic within upright brackets at the far right, beside the WT badge.
+  Worktree rows share branch/HEAD labels and show paths relative
+  to the current project root in All refs, Branches and Worktrees; `.` identifies
+  that root. Paths on another drive stay absolute. Tooltips retain full paths.
+  The Worktrees tab also shows main/linked status, locks and prune reasons,
+  including detached HEADs; search matches relative and full paths in all three tabs.
+  Click an active worktree to reveal its HEAD.
   Prunable, bare and empty entries are labelled and cannot be activated.
   Commit details place exact checkouts in purple cards beneath the commit heading,
   with ancestry relationships in a separate **In worktree history** section.
