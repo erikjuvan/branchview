@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout, QSizePolicy
+from PySide6.QtWidgets import QFrame, QLabel, QHBoxLayout, QVBoxLayout, QSizePolicy
 
 from background_task import BackgroundTask
 from repository_status import read_repository_status
@@ -20,10 +20,21 @@ class RepositoryStatusPanel(QFrame):
         box.setSpacing(4)
         self.heading = QLabel('Repository status')
         self.heading.setStyleSheet('font-weight: bold;')
+        self.notice = QLabel()
+        self.notice.setTextFormat(Qt.TextFormat.PlainText)
+        self.notice.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        notice_policy = QSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        notice_policy.setRetainSizeWhenHidden(True)
+        self.notice.setSizePolicy(notice_policy)
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(8)
+        header.addWidget(self.heading)
+        header.addWidget(self.notice, 1)
+        box.addLayout(header)
         self.branch = QLabel('Open a repository')
         self.changes = QLabel()
-        self.notice = QLabel()
-        for label in (self.heading, self.branch, self.changes, self.notice):
+        for label in (self.branch, self.changes):
             label.setWordWrap(True)
             # Branch names are repository data, never HTML.
             label.setTextFormat(Qt.TextFormat.PlainText)

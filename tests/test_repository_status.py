@@ -6,7 +6,7 @@ from threading import Event
 from unittest.mock import patch
 
 from PySide6.QtTest import QTest
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, QPoint
 from shiboken6 import delete
 
 from background_task import BackgroundTask
@@ -14,6 +14,38 @@ from repository_status import RepositoryStatus, parse_status, read_repository_st
 from repository_status_panel import RepositoryStatusPanel
 from workspace import WorkspaceWindow
 from ui_helpers import application, wait_for_load
+
+
+class RepositoryStatusLayoutTest(unittest.TestCase):
+    def test_refresh_notice_does_not_move_sidebar_content(self):
+        from viewer import Window
+
+        window = Window()
+        self.addCleanup(window.close)
+        panel = window.repository_status
+        status = RepositoryStatus(branch='main')
+        with patch.object(panel.timer, 'start'):
+            panel.refresh(str(Path.cwd()))
+            panel.received(status)
+            window.show()
+            application.processEvents()
+            bounds = panel.geometry()
+            branch_position = window.branch_panel.mapTo(window.sidebar, QPoint())
+
+            for _ in range(3):
+                panel.refresh(str(Path.cwd()))
+                application.processEvents()
+                self.assertTrue(panel.notice.isVisible())
+                self.assertEqual(panel.notice.text(), 'Refreshing…')
+                self.assertEqual(panel.geometry(), bounds)
+                self.assertEqual(window.branch_panel.mapTo(window.sidebar, QPoint()), branch_position)
+                self.assertEqual(panel.notice.geometry().center().y(), panel.heading.geometry().center().y())
+                self.assertGreater(panel.notice.geometry().left(), panel.heading.geometry().right())
+                panel.received(status)
+                application.processEvents()
+                self.assertFalse(panel.notice.isVisible())
+                self.assertEqual(panel.geometry(), bounds)
+                self.assertEqual(window.branch_panel.mapTo(window.sidebar, QPoint()), branch_position)
 
 
 class RepositoryStatusTest(unittest.TestCase):
